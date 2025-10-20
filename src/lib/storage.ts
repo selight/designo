@@ -81,4 +81,14 @@ export function loadProject(id: string): ProjectData | null {
     }
 }
 
+export function deleteProject(id: string): void {
+    // Remove the project data from localStorage
+    localStorage.removeItem(PROJECT_KEY_PREFIX + id);
+    
+    // Remove the project from the projects index
+    const index = listProjects();
+    const updatedIndex = index.filter(project => project.id !== id);
+    writeProjectsIndex(updatedIndex);
+}
+
 

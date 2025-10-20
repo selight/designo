@@ -65,11 +65,26 @@ const ThreeViewport: React.FC<Props> = ({
         const container = mountRef.current;
         // Scene
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0b1020);
 
-        // Cameras - Better default position
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const context = canvas.getContext('2d')!;
+        
+        // Create gradient background
+        const gradient = context.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(0.5, '#16213e');
+        gradient.addColorStop(1, '#0f0f23');
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 256, 256);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        scene.background = texture;
+
+        // Cameras
         const perspectiveCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-        perspectiveCamera.position.set(5, 4, 5);
+        perspectiveCamera.position.set(8, 6, 8);
 
         const orthoSize = 8;
         const topCamera = new THREE.OrthographicCamera(-orthoSize, orthoSize, orthoSize, -orthoSize, 0.1, 1000);
@@ -91,11 +106,17 @@ const ThreeViewport: React.FC<Props> = ({
             right: rightCamera
         };
 
-        // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: false,
+            powerPreference: "high-performance"
+        });
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-        renderer.setClearColor(0x0b1020, 1);
+        renderer.setClearColor(0x000000, 1);
+        
+
+        
         container.appendChild(renderer.domElement);
         renderer.domElement.style.display = "block";
 
@@ -109,74 +130,117 @@ const ThreeViewport: React.FC<Props> = ({
         container.appendChild(css2dRenderer.domElement);
         css2dRendererRef.current = css2dRenderer;
 
-        // Better lighting setup
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+        
+        // Main directional light (key light)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
         directionalLight.position.set(10, 10, 5);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 50;
-        directionalLight.shadow.camera.left = -10;
-        directionalLight.shadow.camera.right = 10;
-        directionalLight.shadow.camera.top = 10;
-        directionalLight.shadow.camera.bottom = -10;
-        scene.add(ambientLight, directionalLight);
+        directionalLight.shadow.mapSize.width = 4096;
+        directionalLight.shadow.mapSize.height = 4096;
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 100;
+        directionalLight.shadow.camera.left = -20;
+        directionalLight.shadow.camera.right = 20;
+        directionalLight.shadow.camera.top = 20;
+        directionalLight.shadow.camera.bottom = -20;
+        directionalLight.shadow.bias = -0.0001;
+        scene.add(directionalLight);
+        
+        // Fill light
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-10, 5, -5);
+        scene.add(fillLight);
+        
+        // Rim light
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
+        rimLight.position.set(0, 5, -10);
+        scene.add(rimLight);
+        
+        // Hemisphere light for softer ambient
+        const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x362d1d, 0.3);
+        scene.add(hemisphereLight);
 
-        // Better grid and axes
-        const grid = new THREE.GridHelper(20, 20, 0x666666, 0x333333);
-        grid.material.opacity = 0.4;
+        const gridSize = 20;
+        const gridDivisions = 20;
+        
+        // Main grid
+        const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0x444444);
+        grid.material.opacity = 0.3;
         (grid.material as any).transparent = true;
         scene.add(grid);
-
-        const axes = new THREE.AxesHelper(3);
+  
+        // Enhanced axes helper
+        const axes = new THREE.AxesHelper(5);
+        axes.material.linewidth = 2;
         scene.add(axes);
-
-        // Controls - More user-friendly settings
+        
+        
+        // Controls
         const orbit = new OrbitControls(perspectiveCamera, renderer.domElement);
         orbit.enableDamping = true;
-        orbit.dampingFactor = 0.1; // Smoother damping
+        orbit.dampingFactor = 0.05; // Smoother damping
         orbit.enablePan = true;
         orbit.enableZoom = true;
         orbit.enableRotate = true;
         orbit.autoRotate = false;
-        
-        // Better zoom and distance limits
         orbit.minDistance = 0.5;
         orbit.maxDistance = 100;
-        
-        // Allow full rotation but with better limits
         orbit.minPolarAngle = 0;
         orbit.maxPolarAngle = Math.PI;
-        orbit.minAzimuthAngle = -Math.PI * 2;
-        orbit.maxAzimuthAngle = Math.PI * 2;
-        
-        // Better pan limits
+        orbit.minAzimuthAngle = -Math.PI * 4; // Allow multiple full rotations
+        orbit.maxAzimuthAngle = Math.PI * 4; // Allow multiple full rotations
         orbit.panSpeed = 1.0;
         orbit.zoomSpeed = 1.2;
         orbit.rotateSpeed = 1.0;
-        
-        // Set initial target
         orbit.target.set(0, 0, 0);
+        orbit.enabled = true;
 
         const transform = new TransformControls(perspectiveCamera, renderer.domElement);
         transform.addEventListener("dragging-changed", (e: any) => {
-            orbit.enabled = !e.value;
+            if (orbitRef.current) {
+                orbitRef.current.enabled = !e.value;
+            }
         });
-        transform.setMode('translate'); // Set default mode
-        // TransformControls manages itself - don't add to scene
+        transform.setMode('translate');
+        transform.enabled = true;
+        transform.showX = true;
+        transform.showY = true;
+        transform.showZ = true;
         
         // Handle transform changes to update object data
         transform.addEventListener("objectChange", () => {
             if (selectedId && onUpdateObject) {
                 const target = idToObject3DRef.current.get(selectedId);
                 if (target && target.parent) {
-                    const position: [number, number, number] = [target.position.x, target.position.y, target.position.z];
-                    const rotation: [number, number, number] = [target.rotation.x, target.rotation.y, target.rotation.z];
-                    const scale: [number, number, number] = [target.scale.x, target.scale.y, target.scale.z];
-                    
-                    onUpdateObject(selectedId, { position, rotation, scale });
+                    try {
+                        // Get current values and validate them
+                        const position: [number, number, number] = [
+                            isFinite(target.position.x) ? target.position.x : 0,
+                            isFinite(target.position.y) ? target.position.y : 0,
+                            isFinite(target.position.z) ? target.position.z : 0
+                        ];
+                        
+                        const rotation: [number, number, number] = [
+                            isFinite(target.rotation.x) ? target.rotation.x : 0,
+                            isFinite(target.rotation.y) ? target.rotation.y : 0,
+                            isFinite(target.rotation.z) ? target.rotation.z : 0
+                        ];
+                        
+                        const scale: [number, number, number] = [
+                            isFinite(target.scale.x) && target.scale.x > 0 ? target.scale.x : 1,
+                            isFinite(target.scale.y) && target.scale.y > 0 ? target.scale.y : 1,
+                            isFinite(target.scale.z) && target.scale.z > 0 ? target.scale.z : 1
+                        ];
+                        
+                        // Only update if values are valid
+                        if (position.every(v => isFinite(v)) && rotation.every(v => isFinite(v)) && scale.every(v => isFinite(v) && v > 0)) {
+                            onUpdateObject(selectedId, { position, rotation, scale });
+                        }
+                    } catch (error) {
+                        console.warn("Error updating object transform:", error);
+                    }
                 }
             }
         });
@@ -238,7 +302,10 @@ const ThreeViewport: React.FC<Props> = ({
         const animate = () => {
             if (!running) return;
             try {
-                orbit.update();
+                // Always update orbit controls if they exist and are enabled
+                if (orbitRef.current && orbitRef.current.enabled) {
+                    orbitRef.current.update();
+                }
                 const camera = currentCameraRef.current || perspectiveCamera;
                 renderer.render(scene, camera);
                 if (css2dRenderer && css2dRenderer.domElement) {
@@ -265,7 +332,7 @@ const ThreeViewport: React.FC<Props> = ({
         // Expose basic camera functions
         if (onResetCamera) {
             (window as any).resetCamera = () => {
-                perspectiveCamera.position.set(5, 4, 5);
+                perspectiveCamera.position.set(8, 6, 8);
                 orbit.target.set(0, 0, 0);
                 orbit.update();
             };
@@ -328,7 +395,7 @@ const ThreeViewport: React.FC<Props> = ({
             // CSS2D renderer cleanup - it doesn't have a dispose method
             if (css2dRenderer && css2dRenderer.domElement) {
                 try {
-                    // Clear all CSS2D objects from the scene first
+                    // Clear all CSS2D objects from the scene
                     scene.traverse((child) => {
                         if (child instanceof CSS2DObject) {
                             try {
@@ -340,8 +407,6 @@ const ThreeViewport: React.FC<Props> = ({
                             }
                         }
                     });
-                    
-                    // Then remove the CSS2D renderer DOM element
                     if (css2dRenderer.domElement.parentNode) {
                         css2dRenderer.domElement.parentNode.removeChild(css2dRenderer.domElement);
                     }
@@ -357,7 +422,6 @@ const ThreeViewport: React.FC<Props> = ({
         };
     }, []);
 
-    // Additional cleanup effect for component unmount
     useEffect(() => {
         return () => {
             // Final cleanup when component unmounts
@@ -374,7 +438,7 @@ const ThreeViewport: React.FC<Props> = ({
 
     // Handle viewport changes
     useEffect(() => {
-        if (!camerasRef.current) return;
+        if (!camerasRef.current || !orbitRef.current) return;
 
         const newCamera = camerasRef.current[activeViewport];
         if (newCamera) {
@@ -384,14 +448,14 @@ const ThreeViewport: React.FC<Props> = ({
                 transformRef.current.camera = newCamera;
             }
 
-            if (orbitRef.current) {
-                if (activeViewport === "perspective") {
-                    orbitRef.current.object = newCamera as THREE.PerspectiveCamera;
-                    orbitRef.current.enabled = true;
-                    orbitRef.current.update();
-                } else {
-                    orbitRef.current.enabled = false;
-                }
+            if (activeViewport === "perspective") {
+                // Enable orbit controls for perspective view
+                orbitRef.current.object = newCamera as THREE.PerspectiveCamera;
+                orbitRef.current.enabled = true;
+                orbitRef.current.update();
+            } else {
+                // Disable orbit controls for orthographic views
+                orbitRef.current.enabled = false;
             }
         }
     }, [activeViewport]);
@@ -401,38 +465,43 @@ const ThreeViewport: React.FC<Props> = ({
         let mesh: THREE.Mesh;
         
         if (obj.type === "primitive") {
-            const material = new THREE.MeshStandardMaterial({ 
+            // Enhanced materials like Three.js editor
+            const material = new THREE.MeshPhysicalMaterial({ 
                 color: 0x8ab4f8, 
-                metalness: 0.1, 
-                roughness: 0.8 
+                metalness: 0.0, 
+                roughness: 0.4,
+                clearcoat: 0.1,
+                clearcoatRoughness: 0.1,
+                envMapIntensity: 1.0
             });
             
             let geometry: THREE.BufferGeometry;
             if (obj.kind === "cube") {
                 geometry = new THREE.BoxGeometry(1, 1, 1);
             } else if (obj.kind === "sphere") {
-                geometry = new THREE.SphereGeometry(0.6, 32, 24);
+                geometry = new THREE.SphereGeometry(0.6, 64, 48); // Higher quality sphere
             } else {
-                geometry = new THREE.ConeGeometry(0.6, 1, 24);
+                geometry = new THREE.ConeGeometry(0.6, 1, 32); // Higher quality cone
             }
             mesh = new THREE.Mesh(geometry, material);
         } else if (obj.type === "stl") {
-            // Simple material like the working example
+            // Enhanced STL material
             const material = new THREE.MeshPhysicalMaterial({
                 color: 0xb2ffc8,
-                metalness: 0.25,
-                roughness: 0.1,
+                metalness: 0.1,
+                roughness: 0.3,
+                clearcoat: 0.2,
+                clearcoatRoughness: 0.2,
+                envMapIntensity: 1.0,
                 opacity: 1.0,
                 transparent: false
             });
-            
-            // Simple STL geometry parsing like the working example
+
             let geometry: THREE.BufferGeometry;
             try {
                 if (obj.geometryJson && obj.geometryJson.data) {
                     geometry = new BufferGeometryLoader().parse(obj.geometryJson);
-                    
-                    // Ensure it has position attribute
+
                     if (!geometry.getAttribute('position')) {
                         console.error("STL geometry missing position attribute");
                         geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -447,8 +516,7 @@ const ThreeViewport: React.FC<Props> = ({
             }
             mesh = new THREE.Mesh(geometry, material);
         } else if (obj.type === "annotation") {
-            // Annotations are handled by React components, skip in buildObject3D
-            return new THREE.Group(); // Return empty group, will be handled by Annotation component
+            return new THREE.Group();
         } else {
             // Fallback
             mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
@@ -456,9 +524,25 @@ const ThreeViewport: React.FC<Props> = ({
 
         mesh.name = obj.name;
         mesh.visible = obj.visible;
-        mesh.position.fromArray(obj.position);
-        mesh.rotation.set(obj.rotation[0], obj.rotation[1], obj.rotation[2]);
-        mesh.scale.fromArray(obj.scale);
+        
+        // Validate and set position to prevent null/undefined values
+        const safePosition = obj.position && obj.position.length === 3 && obj.position.every(v => isFinite(v)) 
+            ? obj.position 
+            : [0, 0, 0];
+        mesh.position.fromArray(safePosition);
+        
+        // Validate and set rotation
+        const safeRotation = obj.rotation && obj.rotation.length === 3 && obj.rotation.every(v => isFinite(v))
+            ? obj.rotation
+            : [0, 0, 0];
+        mesh.rotation.set(safeRotation[0], safeRotation[1], safeRotation[2]);
+        
+        // Validate and set scale
+        const safeScale = obj.scale && obj.scale.length === 3 && obj.scale.every(v => isFinite(v) && v > 0)
+            ? obj.scale
+            : [1, 1, 1];
+        mesh.scale.fromArray(safeScale);
+        
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
@@ -507,7 +591,8 @@ const ThreeViewport: React.FC<Props> = ({
     // Handle object selection
     useEffect(() => {
         const transform = transformRef.current;
-        if (!transform) return;
+        const orbit = orbitRef.current;
+        if (!transform || !orbit) return;
 
         if (selectedId) {
             const target = idToObject3DRef.current.get(selectedId);
@@ -517,11 +602,19 @@ const ThreeViewport: React.FC<Props> = ({
             } else {
                 // Object was removed, detach transform controls
                 transform.detach();
+                // Re-enable orbit controls
+                if (activeViewport === "perspective") {
+                    orbit.enabled = true;
+                }
             }
         } else {
             transform.detach();
+            // Re-enable orbit controls when nothing is selected
+            if (activeViewport === "perspective") {
+                orbit.enabled = true;
+            }
         }
-    }, [selectedId, project?.objects]);
+    }, [selectedId, project?.objects, activeViewport]);
 
     // Clean up transform controls when objects are removed
     useEffect(() => {

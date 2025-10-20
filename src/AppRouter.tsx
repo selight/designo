@@ -1,25 +1,65 @@
-import React, { useMemo, useState } from "react";
+import React from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Projects from "./pages/Projects";
 import Editor from "./pages/Editor";
 import { loadUser, saveUser } from "./lib/storage";
 
-type Route = { name: "login" } | { name: "projects" } | { name: "editor", id: string };
-
 const AppRouter: React.FC = () => {
-    const initial = useMemo(() => {
-        const hasUser = !!loadUser();
-        return (hasUser ? { name: "projects" } : { name: "login" }) as Route;
-    }, []);
-    const [route, setRoute] = useState<Route>(initial);
+    const hasUser = !!loadUser();
 
-    if (route.name === "login") {
-        return <Login onLoggedIn={() => setRoute({ name: "projects" })} />;
-    }
-    if (route.name === "projects") {
-        return <Projects onOpenProject={(id) => setRoute({ name: "editor", id })} onLogout={() => { saveUser({ name: "" }); setRoute({ name: "login" }); }} />;
-    }
-    return <Editor projectId={route.id} onBack={() => setRoute({ name: "projects" })} />;
+    return (
+        <Router>
+            <Routes>
+                <Route 
+                    path="/login" 
+                    element={
+                        hasUser ? 
+                        <Navigate to="/projects" replace /> : 
+                        <LoginWrapper />
+                    } 
+                />
+                <Route 
+                    path="/projects" 
+                    element={
+                        hasUser ? 
+                        <ProjectsWrapper /> : 
+                        <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
+                    path="/editor/:projectId" 
+                    element={
+                        hasUser ? 
+                        <Editor /> : 
+                        <Navigate to="/login" replace />
+                    } 
+                />
+                <Route 
+                    path="/" 
+                    element={<Navigate to={hasUser ? "/projects" : "/login"} replace />} 
+                />
+            </Routes>
+        </Router>
+    );
+};
+
+const LoginWrapper: React.FC = () => {
+    const navigate = useNavigate();
+    return <Login onLoggedIn={() => navigate("/projects")} />;
+};
+
+const ProjectsWrapper: React.FC = () => {
+    const navigate = useNavigate();
+    return (
+        <Projects 
+            onOpenProject={(id) => navigate(`/editor/${id}`)} 
+            onLogout={() => { 
+                saveUser({ name: "" }); 
+                navigate("/login"); 
+            }} 
+        />
+    );
 };
 
 export default AppRouter;

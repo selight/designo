@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { ProjectData, PrimitiveKind, SceneObject, STLObject, AnnotationObject } from "../lib/types";
@@ -7,12 +8,9 @@ import ThreeViewport from "../components/ThreeViewport";
 
 type ViewportType = "perspective" | "top" | "front" | "right";
 
-interface Props {
-    projectId: string;
-    onBack: () => void;
-}
-
-const Editor: React.FC<Props> = ({ projectId, onBack }) => {
+const Editor: React.FC = () => {
+    const { projectId } = useParams<{ projectId: string }>();
+    const navigate = useNavigate();
     const stlLoader = useMemo(() => new STLLoader(), []);
 
     const [project, setProject] = useState<ProjectData | null>(null);
@@ -21,6 +19,7 @@ const Editor: React.FC<Props> = ({ projectId, onBack }) => {
 
     // load project
     useEffect(() => {
+        if (!projectId) return;
         const loadedProject = loadProject(projectId);
         setProject(loadedProject);
         
@@ -63,11 +62,7 @@ const Editor: React.FC<Props> = ({ projectId, onBack }) => {
         try {
             const arrayBuffer = await file.arrayBuffer();
             const geom = stlLoader.parse(arrayBuffer as unknown as ArrayBuffer);
-            
-            // Simple approach like the working example
             geom.computeBoundingBox();
-            
-            // Basic scaling to fit in view
             if (geom.boundingBox) {
                 const size = new THREE.Vector3();
                 geom.boundingBox.getSize(size);
@@ -92,7 +87,7 @@ const Editor: React.FC<Props> = ({ projectId, onBack }) => {
                 position: [0, 0, 0],
                 rotation: [0, 0, 0],
                 scale: [1, 1, 1],
-                geometryJson: geom.toJSON() // Simple JSON, no compression
+                geometryJson: geom.toJSON()
             } as any;
             
             const next = { ...project, objects: [...project.objects, obj] };
@@ -112,12 +107,11 @@ const Editor: React.FC<Props> = ({ projectId, onBack }) => {
         const next = { 
             ...project, 
             objects: project.objects.filter(obj => {
-                // Keep objects that are not the deleted object and not annotations belonging to it
                 if (obj.id === id) return false; // Delete the main object
                 if (obj.type === "annotation" && (obj as AnnotationObject).targetObjectId === id) {
                     return false; // Delete annotations that belong to this object
                 }
-                return true; // Keep everything else
+                return true;
             })
         };
         
@@ -169,56 +163,62 @@ const Editor: React.FC<Props> = ({ projectId, onBack }) => {
     return (
         <div className="w-screen h-screen relative">
             {/* Floating Top Toolbar */}
-            <div className="absolute top-5 left-1/2 transform -translate-x-1/2 flex gap-2 bg-slate-900/95 backdrop-blur-md px-5 py-3 rounded-2xl border border-slate-700/30 shadow-2xl z-[1000]">
-                <button 
-                    onClick={onBack} 
-                    className="px-4 py-2.5 rounded-xl border border-slate-600/50 bg-slate-800/80 text-white text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-800 hover:border-blue-500/50"
-                >
-                    ← Back
-                </button>
-                <div className="px-4 py-2.5 text-white text-base font-semibold flex items-center">
-                    {project.title}
-                </div>
-                <div className="w-px h-6 bg-slate-600/50 mx-2" />
-                
-                {/* Shape Icons */}
-                <button 
-                    onClick={() => addPrimitive("cube")} 
-                    className="p-3 rounded-xl border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
-                    title="Add Cube"
-                >
-                    <div className="w-5 h-5 bg-white rounded" />
-                </button>
-                <button 
-                    onClick={() => addPrimitive("sphere")} 
-                    className="p-3 rounded-xl border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
-                    title="Add Sphere"
-                >
-                    <div className="w-5 h-5 bg-white rounded-full" />
-                </button>
-                <button 
-                    onClick={() => addPrimitive("cone")} 
-                    className="p-3 rounded-xl border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
-                    title="Add Cone"
-                >
-                    <div className="w-0 h-0 border-l-[10px] border-r-[10px] border-b-[20px] border-l-transparent border-r-transparent border-b-white" />
-                </button>
-                <div className="w-px h-6 bg-slate-600/50 mx-2" />
-                <label className="p-3 rounded-xl border border-slate-600/50 bg-slate-900/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-indigo-500/20 hover:border-indigo-500/50">
-                    <input 
-                        type="file" 
-                        accept=".stl" 
-                        onChange={(e) => e.target.files && e.target.files[0] && onUploadSTL(e.target.files[0])} 
-                        className="hidden"
-                    />
-                    <div className="w-5 h-5 flex items-center justify-center">
-                        📁
+            <div className="absolute top-4 left-1/2 sm:left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700/30 shadow-2xl z-[1000] max-w-[95vw]">
+                {/* Left section - Back button and title */}
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => navigate("/projects")} 
+                        className="px-2 py-1.5 rounded-lg border border-slate-600/50 bg-slate-800/80 text-white text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-800 hover:border-blue-500/50"
+                    >
+                        ← Back
+                    </button>
+                    <div className="px-2 py-1.5 text-white text-sm font-semibold whitespace-nowrap">
+                        {project.title}
                     </div>
-                </label>
+                </div>
+                
+                {/* Vertical divider */}
+                <div className="w-px h-5 bg-slate-600/50" />
+                
+                {/* Right section - Shape tools */}
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => addPrimitive("cube")} 
+                        className="p-2 rounded-lg border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
+                        title="Add Cube"
+                    >
+                        <div className="w-4 h-4 bg-white rounded" />
+                    </button>
+                    <button 
+                        onClick={() => addPrimitive("sphere")} 
+                        className="p-2 rounded-lg border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
+                        title="Add Sphere"
+                    >
+                        <div className="w-4 h-4 bg-white rounded-full" />
+                    </button>
+                    <button 
+                        onClick={() => addPrimitive("cone")} 
+                        className="p-2 rounded-lg border border-slate-600/50 bg-slate-800/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-blue-500/50"
+                        title="Add Cone"
+                    >
+                        <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[16px] border-l-transparent border-r-transparent border-b-white" />
+                    </button>
+                    <label className="p-2 rounded-lg border border-slate-600/50 bg-slate-900/80 text-white cursor-pointer transition-all duration-200 flex items-center justify-center hover:bg-blue-500/20 hover:border-indigo-500/50">
+                        <input 
+                            type="file" 
+                            accept=".stl" 
+                            onChange={(e) => e.target.files && e.target.files[0] && onUploadSTL(e.target.files[0])} 
+                            className="hidden"
+                        />
+                        <div className="w-4 h-4 flex items-center justify-center text-lg">
+                            📁
+                        </div>
+                    </label>
+                </div>
             </div>
 
             {/* Floating Right Toolbar */}
-            <div className="absolute top-5 right-5 w-72 bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700/30 shadow-2xl z-[1000] p-5">
+            <div className="absolute top-20 right-4 w-72 bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700/30 shadow-2xl z-[1000] p-5">
 
 
                 {/* Position Controls */}
