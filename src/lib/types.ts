@@ -34,8 +34,9 @@ export interface AnnotationObject extends SceneObjectBase {
     type: "annotation";
     normal?: [number, number, number];
     text: string;
-    index?: number; // Add this
+    index?: number;
     targetObjectId?: string; // ID of the object this annotation belongs to
+    createdAt?: string;
 }
 
 export type SceneObject = PrimitiveObject | STLObject | AnnotationObject;
@@ -45,6 +46,10 @@ export interface ProjectData {
     title: string;
     objects: SceneObject[];
     updatedAt: number;
+    camera?: {
+        position: [number, number, number];
+        target: [number, number, number];
+    };
 }
 
 

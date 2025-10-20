@@ -20,13 +20,14 @@ interface Props {
     onSelectObject: (id: string | null) => void;
     onDeleteObject: (id: string) => void;
     onResetCamera?: () => void;
-     onPlaceAnnotation?: (
+    onPlaceAnnotation?: (
          worldPosition: [number, number, number],
          normal?: [number, number, number],
          text?: string,
-         parentId?: string // 🟢 NEW — parent model ID
+         parentId?: string // parent model ID
      ) => void;
     onUpdateObject?: (id: string, updates: Partial<SceneObject>) => void;
+    onCameraChange?: (camera: { position: [number, number, number]; target: [number, number, number] }) => void;
 }
 
 const ThreeViewport: React.FC<Props> = ({
@@ -37,7 +38,8 @@ const ThreeViewport: React.FC<Props> = ({
     onDeleteObject,
     onResetCamera,
     onPlaceAnnotation,
-    onUpdateObject
+    onUpdateObject: _onUpdateObject,
+    onCameraChange
 }) => {
     const mountRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -46,16 +48,18 @@ const ThreeViewport: React.FC<Props> = ({
     const camerasRef = useRef<{ [K in ViewportType]: THREE.Camera } | null>(null);
     const currentCameraRef = useRef<THREE.Camera | null>(null);
     const orbitRef = useRef<OrbitControls | null>(null);
+    const isOrbitingRef = useRef<boolean>(false);
     const transformRef = useRef<TransformControls | null>(null);
     const idToObject3DRef = useRef<Map<string, THREE.Object3D>>(new Map());
     const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+    const [controlsReady, setControlsReady] = useState<boolean>(false);
     const animationFrameRef = useRef<number | null>(null);
     
      // Annotation input state
      const [annotationInput, setAnnotationInput] = useState<{
          position: [number, number, number];
          normal?: [number, number, number];
-         parentId?: string; // 🟢 NEW — parent model ID
+         parentId?: string; 
      } | null>(null);
 
     // Initialize Three.js scene
@@ -71,7 +75,6 @@ const ThreeViewport: React.FC<Props> = ({
         canvas.height = 256;
         const context = canvas.getContext('2d')!;
         
-        // Create gradient background
         const gradient = context.createLinearGradient(0, 0, 0, 256);
         gradient.addColorStop(0, '#1a1a2e');
         gradient.addColorStop(0.5, '#16213e');
@@ -84,7 +87,16 @@ const ThreeViewport: React.FC<Props> = ({
 
         // Cameras
         const perspectiveCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-        perspectiveCamera.position.set(8, 6, 8);
+        // If project.camera provided, use it; else default
+        if (project.camera) {
+            perspectiveCamera.position.set(
+                project.camera.position[0],
+                project.camera.position[1],
+                project.camera.position[2]
+            );
+        } else {
+            perspectiveCamera.position.set(8, 6, 8);
+        }
 
         const orthoSize = 8;
         const topCamera = new THREE.OrthographicCamera(-orthoSize, orthoSize, orthoSize, -orthoSize, 0.1, 1000);
@@ -194,8 +206,27 @@ const ThreeViewport: React.FC<Props> = ({
         orbit.panSpeed = 1.0;
         orbit.zoomSpeed = 1.2;
         orbit.rotateSpeed = 1.0;
-        orbit.target.set(0, 0, 0);
+        if (project.camera) {
+            orbit.target.set(
+                project.camera.target[0],
+                project.camera.target[1],
+                project.camera.target[2]
+            );
+        } else {
+            orbit.target.set(0, 0, 0);
+        }
         orbit.enabled = true;
+        // Track orbit interactions and send camera change at end
+        orbit.addEventListener('start', () => { isOrbitingRef.current = true; });
+        orbit.addEventListener('end', () => {
+            isOrbitingRef.current = false;
+            if (onCameraChange && currentCameraRef.current) {
+                const cam = currentCameraRef.current as THREE.PerspectiveCamera;
+                const pos: [number, number, number] = [cam.position.x, cam.position.y, cam.position.z];
+                const tgt: [number, number, number] = [orbit.target.x, orbit.target.y, orbit.target.z];
+                onCameraChange({ position: pos, target: tgt });
+            }
+        });
 
         const transform = new TransformControls(perspectiveCamera, renderer.domElement);
         transform.addEventListener("dragging-changed", (e: any) => {
@@ -204,46 +235,13 @@ const ThreeViewport: React.FC<Props> = ({
             }
         });
         transform.setMode('translate');
-        transform.enabled = true;
-        transform.showX = true;
-        transform.showY = true;
-        transform.showZ = true;
+        // Disable transform controls to prevent dragging objects
+        transform.enabled = false;
+        transform.showX = false;
+        transform.showY = false;
+        transform.showZ = false;
         
-        // Handle transform changes to update object data
-        transform.addEventListener("objectChange", () => {
-            if (selectedId && onUpdateObject) {
-                const target = idToObject3DRef.current.get(selectedId);
-                if (target && target.parent) {
-                    try {
-                        // Get current values and validate them
-                        const position: [number, number, number] = [
-                            isFinite(target.position.x) ? target.position.x : 0,
-                            isFinite(target.position.y) ? target.position.y : 0,
-                            isFinite(target.position.z) ? target.position.z : 0
-                        ];
-                        
-                        const rotation: [number, number, number] = [
-                            isFinite(target.rotation.x) ? target.rotation.x : 0,
-                            isFinite(target.rotation.y) ? target.rotation.y : 0,
-                            isFinite(target.rotation.z) ? target.rotation.z : 0
-                        ];
-                        
-                        const scale: [number, number, number] = [
-                            isFinite(target.scale.x) && target.scale.x > 0 ? target.scale.x : 1,
-                            isFinite(target.scale.y) && target.scale.y > 0 ? target.scale.y : 1,
-                            isFinite(target.scale.z) && target.scale.z > 0 ? target.scale.z : 1
-                        ];
-                        
-                        // Only update if values are valid
-                        if (position.every(v => isFinite(v)) && rotation.every(v => isFinite(v)) && scale.every(v => isFinite(v) && v > 0)) {
-                            onUpdateObject(selectedId, { position, rotation, scale });
-                        }
-                    } catch (error) {
-                        console.warn("Error updating object transform:", error);
-                    }
-                }
-            }
-        });
+        // Do not propagate transform changes since dragging is disabled
 
         // Resize handler
         const resize = () => {
@@ -255,11 +253,8 @@ const ThreeViewport: React.FC<Props> = ({
             renderer.setSize(width, height, true);
             css2dRenderer.setSize(width, height);
 
-            // Update perspective camera
             perspectiveCamera.aspect = aspect;
             perspectiveCamera.updateProjectionMatrix();
-
-            // Update orthographic cameras
             if (aspect > 1) {
                 topCamera.left = -orthoSize * aspect;
                 topCamera.right = orthoSize * aspect;
@@ -327,6 +322,7 @@ const ThreeViewport: React.FC<Props> = ({
         camerasRef.current = cameras;
         currentCameraRef.current = perspectiveCamera;
         orbitRef.current = orbit;
+        setControlsReady(true);
         transformRef.current = transform;
 
         // Expose basic camera functions
@@ -393,7 +389,7 @@ const ThreeViewport: React.FC<Props> = ({
             renderer.dispose();
             
             // CSS2D renderer cleanup - it doesn't have a dispose method
-            if (css2dRenderer && css2dRenderer.domElement) {
+            if (css2dRenderer && css2dRenderer.domElement && scene) {
                 try {
                     // Clear all CSS2D objects from the scene
                     scene.traverse((child) => {
@@ -436,7 +432,6 @@ const ThreeViewport: React.FC<Props> = ({
         };
     }, []);
 
-    // Handle viewport changes
     useEffect(() => {
         if (!camerasRef.current || !orbitRef.current) return;
 
@@ -476,12 +471,24 @@ const ThreeViewport: React.FC<Props> = ({
             });
             
             let geometry: THREE.BufferGeometry;
-            if (obj.kind === "cube") {
+            const kind = (obj as any).kind ?? (typeof (obj as any).name === 'string' ? (obj as any).name : undefined);
+            if (kind === "cube") {
                 geometry = new THREE.BoxGeometry(1, 1, 1);
-            } else if (obj.kind === "sphere") {
+            } else if (kind === "sphere") {
                 geometry = new THREE.SphereGeometry(0.6, 64, 48); // Higher quality sphere
+            } else if (kind === "cone") {
+                geometry = new THREE.ConeGeometry(0.5, 1, 32); // radius, height, radialSegments
             } else {
-                geometry = new THREE.ConeGeometry(0.6, 1, 32); // Higher quality cone
+                // If kind is missing or unrecognized, try to infer from name
+                const name = (obj as any).name?.toLowerCase();
+                if (name === "sphere") {
+                    geometry = new THREE.SphereGeometry(0.6, 64, 48);
+                } else if (name === "cone") {
+                    geometry = new THREE.ConeGeometry(0.5, 1, 32);
+                } else {
+                    // Only default to cube if we really can't determine the shape
+                    geometry = new THREE.BoxGeometry(1, 1, 1);
+                }
             }
             mesh = new THREE.Mesh(geometry, material);
         } else if (obj.type === "stl") {
@@ -573,12 +580,11 @@ const ThreeViewport: React.FC<Props> = ({
         });
         idToObject3DRef.current.clear();
 
-        // Add new objects (excluding annotations)
         for (const obj of project.objects) {
             if (obj.type === "annotation") {
-                // Skip annotations - they're handled by React components
                 continue;
             }
+            if (idToObject3DRef.current.has(obj.id)) continue;
             const mesh = buildObject3D(obj);
             mesh.userData.__sceneObjectId = obj.id;
             scene.add(mesh);
@@ -588,31 +594,15 @@ const ThreeViewport: React.FC<Props> = ({
     }, [project?.objects]);
 
 
-    // Handle object selection
     useEffect(() => {
         const transform = transformRef.current;
         const orbit = orbitRef.current;
         if (!transform || !orbit) return;
 
-        if (selectedId) {
-            const target = idToObject3DRef.current.get(selectedId);
-            if (target && target.parent) {
-                // Ensure the object is still in the scene before attaching
-                transform.attach(target);
-            } else {
-                // Object was removed, detach transform controls
-                transform.detach();
-                // Re-enable orbit controls
-                if (activeViewport === "perspective") {
-                    orbit.enabled = true;
-                }
-            }
-        } else {
-            transform.detach();
-            // Re-enable orbit controls when nothing is selected
-            if (activeViewport === "perspective") {
-                orbit.enabled = true;
-            }
+        // Do not attach transform controls; dragging is disabled
+        transform.detach();
+        if (activeViewport === "perspective") {
+            orbit.enabled = true;
         }
     }, [selectedId, project?.objects, activeViewport]);
 
@@ -628,7 +618,6 @@ const ThreeViewport: React.FC<Props> = ({
         }
     }, [project?.objects, selectedId]);
 
-    // Add click handler for object selection and double-click for annotations
     useEffect(() => {
         const renderer = rendererRef.current;
         const scene = sceneRef.current;
@@ -646,25 +635,23 @@ const ThreeViewport: React.FC<Props> = ({
 
             raycaster.setFromCamera(mouse, camera);
             
-            // Check for annotation sprites first - look for sprites in the scene
             const allSceneObjects: THREE.Object3D[] = [];
             scene.traverse((child) => {
                 if (child instanceof THREE.Sprite) {
                     allSceneObjects.push(child);
                 }
             });
+            
             const annotationIntersects = raycaster.intersectObjects(allSceneObjects, true);
             
             if (annotationIntersects.length > 0) {
-                // Clicked on an annotation sprite
                 const clickedAnnotation = annotationIntersects[0].object;
+                
                 if (clickedAnnotation.userData.onClick) {
                     clickedAnnotation.userData.onClick();
                 }
                 return;
             }
-            
-            // Get all scene objects (excluding annotations for raycasting)
             const objects = Array.from(idToObject3DRef.current.values()).filter(obj => {
                 const sceneObj = project.objects.find(o => o.id === obj.userData.__sceneObjectId);
                 return sceneObj && sceneObj.type !== "annotation";
@@ -683,7 +670,6 @@ const ThreeViewport: React.FC<Props> = ({
                      const worldNormal: [number, number, number] | undefined = normal ? 
                          [normal.x, normal.y, normal.z] : undefined;
                      
-                     // 🟢 Find the parent object ID
                      const clickedObject = intersects[0].object;
                      let rootObject: THREE.Object3D | null = clickedObject;
                      while (rootObject && !rootObject.userData.__sceneObjectId) {
@@ -712,9 +698,8 @@ const ThreeViewport: React.FC<Props> = ({
                             setActiveAnnotationId(null); // Clear active annotation when selecting other objects
                         }
                     } else {
-                        // Clicked on empty space, deselect
-                        onSelectObject(null);
-                        setActiveAnnotationId(null); // Also clear active annotation
+                        // Keep current selection; avoid losing focus on empty space clicks
+                        setActiveAnnotationId(null);
                     }
                     clickTimeout = null;
                 }, 300); // 300ms delay to detect double click
@@ -731,8 +716,49 @@ const ThreeViewport: React.FC<Props> = ({
         };
     }, [onSelectObject, onPlaceAnnotation, project.objects]);
 
+    useEffect(() => {
+        const socket = (window as any).socket;
+        if (!socket) return;
 
-     // Handle annotation input
+            const handleCameraMove = (data: any) => {
+                const orbit = orbitRef.current;
+            const camera = currentCameraRef.current;
+            
+            if (orbit && camera && data.position && data.target) {
+                // Smoothly animate to the new camera position
+                const startPosition = camera.position.clone();
+                const startTarget = orbit.target.clone();
+                const endPosition = new THREE.Vector3(...data.position);
+                const endTarget = new THREE.Vector3(...data.target);
+                
+                const duration = 1000; // 1 second animation
+                const startTime = Date.now();
+                
+                const animate = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const easeProgress = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+                    
+                    camera.position.lerpVectors(startPosition, endPosition, easeProgress);
+                    orbit.target.lerpVectors(startTarget, endTarget, easeProgress);
+                    orbit.update();
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    }
+                };
+                
+                requestAnimationFrame(animate);
+            }
+        };
+
+        socket.on('camera-moved', handleCameraMove);
+
+        return () => {
+            socket.off('camera-moved', handleCameraMove);
+        };
+    }, []);
+
      const handleAnnotationSave = (text: string) => {
          if (annotationInput && onPlaceAnnotation) {
              onPlaceAnnotation(annotationInput.position, annotationInput.normal, text, annotationInput.parentId);
@@ -755,26 +781,29 @@ const ThreeViewport: React.FC<Props> = ({
             }} 
         >
              {/* Render annotations only if parent still exists */}
-             {sceneRef.current && rendererRef.current && currentCameraRef.current &&
+            {sceneRef.current && rendererRef.current && currentCameraRef.current && controlsReady &&
                  project.objects
                      .filter(
                          (o): o is AnnotationObject =>
                              o.type === "annotation" &&
                              (!o.targetObjectId ||
-                                 project.objects.some((m) => m.id === o.targetObjectId)) // 🟢 skip if parent deleted
+                                 project.objects.some((m) => m.id === o.targetObjectId)) // skip if parent deleted
                      )
-                     .map((obj, i) => (
-                         <Annotation
-                             key={obj.id}
-                             annotation={{ ...obj, index: i + 1 }}
-                             scene={sceneRef.current!}
-                             camera={currentCameraRef.current!}
-                             controls={orbitRef.current} // pass orbit controls
-                             activeAnnotationId={activeAnnotationId}
-                             setActiveAnnotationId={setActiveAnnotationId}
-                             onDelete={onDeleteObject}
-                         />
-                     ))}
+                     .map((obj, i) => {
+                         
+                        return (
+                            <Annotation
+                                key={obj.id}
+                                annotation={{ ...obj, index: obj.index || i + 1 }}
+                                scene={sceneRef.current!}
+                                camera={currentCameraRef.current!}
+                                controls={orbitRef.current}
+                                activeAnnotationId={activeAnnotationId}
+                                setActiveAnnotationId={setActiveAnnotationId}
+                                onDelete={onDeleteObject}
+                            />
+                        );
+                     })}
 
             {/* Render annotation input */}
             {annotationInput && (

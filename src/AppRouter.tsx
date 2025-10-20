@@ -23,6 +23,10 @@ const AppRouter: React.FC = () => {
                     element={<Editor />} 
                 />
                 <Route 
+                    path="/share/:projectId" 
+                    element={<ShareWrapper />} 
+                />
+                <Route 
                     path="/" 
                     element={<Navigate to="/projects" replace />} 
                 />
@@ -44,6 +48,20 @@ const ProjectsWrapper: React.FC = () => {
             onLogout={() => { 
                 clearAppStorage();
                 navigate("/login"); 
+            }} 
+        />
+    );
+};
+
+const ShareWrapper: React.FC = () => {
+    const navigate = useNavigate();
+    return (
+        <Login 
+            onLoggedIn={() => {
+                // After login, redirect to the shared project
+                const pathParts = window.location.pathname.split('/');
+                const projectId = pathParts[pathParts.length - 1];
+                navigate(`/editor/${projectId}`);
             }} 
         />
     );

@@ -26,21 +26,27 @@ const Annotation: React.FC<AnnotationProps> = ({
   const lineRef = useRef<THREE.Line | null>(null);
   const [visible, setVisible] = useState(false);
 
-  /** 🟣 Sprite marker */
+
+
+  /** Create annotation sprite marker */
   useEffect(() => {
     const canvas = document.createElement("canvas");
     const size = 140;
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext("2d")!;
+    
+    // Draw circle background
     ctx.beginPath();
     ctx.arc(size / 2, size / 2, size / 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = "#1a1f29"; // primary color
+    ctx.fillStyle = "#1a1f29";
     ctx.fill();
+    
+    // Draw annotation number
     ctx.font = "bold 48px sans-serif";
     ctx.fillStyle = "white";
     const text = annotation.index?.toString() ?? "";
-    const tw = ctx.measureText(text).width;
-    ctx.fillText(text, size / 2 - tw / 2, size / 2 + 18);
+    const textWidth = ctx.measureText(text).width;
+    ctx.fillText(text, size / 2 - textWidth / 2, size / 2 + 18);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -56,6 +62,14 @@ const Annotation: React.FC<AnnotationProps> = ({
     sprite.scale.setScalar(0.25);
     sprite.renderOrder = 999;
     sprite.visible = true;
+    sprite.userData.annotationId = annotation.id;
+    
+    const handleClick = () => {
+      setActiveAnnotationId(annotation.id);
+      focusCamera(sprite.position.clone());
+    };
+    sprite.userData.onClick = handleClick;
+    
     scene.add(sprite);
     spriteRef.current = sprite;
 
@@ -64,7 +78,7 @@ const Annotation: React.FC<AnnotationProps> = ({
       texture.dispose();
       material.dispose();
     };
-  }, [annotation.position, scene, annotation.index]);
+  }, [annotation.position, annotation.id, annotation.index, scene, setActiveAnnotationId]);
 
   useEffect(() => {
     const div = document.createElement("div");
@@ -78,7 +92,7 @@ const Annotation: React.FC<AnnotationProps> = ({
   `;
 
   // content
-  div.textContent = annotation.text;
+  div.textContent = annotation.text || 'No text';
   div.style.opacity = "0";
 
 
@@ -119,7 +133,7 @@ const Annotation: React.FC<AnnotationProps> = ({
     };
   }, [annotation.position, scene]);
 
-  /**  line and label visibility */
+  /** Update line and label visibility */
   useEffect(() => {
     const label = labelObjRef.current?.element as HTMLElement;
     const line = lineRef.current;
@@ -172,17 +186,6 @@ const Annotation: React.FC<AnnotationProps> = ({
     requestAnimationFrame(animate);
   };
 
-  /** Sprite click handler */
-  useEffect(() => {
-    if (!spriteRef.current) return;
-    spriteRef.current.userData.onClick = () => {
-      setActiveAnnotationId(annotation.id);
-      focusCamera(spriteRef.current!.position.clone());
-    };
-    return () => {
-      if (spriteRef.current) delete spriteRef.current.userData.onClick;
-    };
-  }, [annotation.id, setActiveAnnotationId]);
 
   useEffect(() => {
     const isActive = activeAnnotationId === annotation.id;

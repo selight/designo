@@ -4,7 +4,10 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { ProjectData, PrimitiveKind, SceneObject, STLObject, AnnotationObject } from "../lib/types";
 import { loadProject, saveProject } from "../lib/storage";
+import { getProject, updateProjectApi } from "../lib/api";
 import ThreeViewport from "../components/ThreeViewport";
+import UserPresence from "../components/UserPresence";
+import { useSocket } from "../lib/useSocket";
 
 type ViewportType = "perspective" | "top" | "front" | "right";
 
@@ -17,24 +20,114 @@ const Editor: React.FC = () => {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [activeViewport, setActiveViewport] = useState<ViewportType>("perspective");
 
+    // WebSocket integration
+    const {
+        connected,
+        roomUsers,
+        sendCameraMove,
+        sendObjectChange
+    } = useSocket(projectId || '');
+
     // load project
     useEffect(() => {
         if (!projectId) return;
-        const loadedProject = loadProject(projectId);
-        setProject(loadedProject);
-        
-        // Auto-select first model object if none selected and objects exist
-        if (loadedProject && loadedProject.objects.length > 0 && !selectedId) {
-            const firstModel = loadedProject.objects.find(obj => obj.type === "primitive" || obj.type === "stl");
-            if (firstModel) {
-                setSelectedId(firstModel.id);
+        (async () => {
+            try {
+                const remote = await getProject(projectId);
+                const loadedProject = {
+                    id: remote._id,
+                    title: remote.title,
+                    objects: (remote.objects as any) ?? [],
+                    updatedAt: new Date(remote.updatedAt).getTime(),
+                    camera: remote.camera || { position: [8,6,8], target: [0,0,0] }
+                } as ProjectData;
+                
+                
+                setProject(loadedProject);
+                if (loadedProject && loadedProject.objects.length > 0 && !selectedId) {
+                    const firstModel = loadedProject.objects.find(obj => obj.type === "primitive" || obj.type === "stl");
+                    if (firstModel) {
+                        setSelectedId(firstModel.id);
+                    }
+                }
+            } catch {
+                const local = loadProject(projectId);
+                setProject(local);
+                if (local && local.objects.length > 0 && !selectedId) {
+                    const firstModel = local.objects.find(obj => obj.type === "primitive" || obj.type === "stl");
+                    if (firstModel) setSelectedId(firstModel.id);
+                }
             }
-        }
+        })();
     }, [projectId, selectedId]);
 
-    const saveNow = (next: ProjectData) => {
+    useEffect(() => {
+        if (!connected || !project) return;
+
+        const handleObjectChange = (data: any) => {
+            if (data.action === 'add' && data.object) {
+                const next = { ...project, objects: [...project.objects, data.object] };
+                saveNow(next, true);
+            } else if (data.action === 'update' && data.object) {
+                const next = {
+                    ...project,
+                    objects: project.objects.map(obj => obj.id === data.object.id ? data.object : obj)
+                };
+                saveNow(next, true);
+            } else if (data.action === 'delete' && data.objectId) {
+                const next = {
+                    ...project,
+                    objects: project.objects.filter(obj => obj.id !== data.objectId)
+                };
+                saveNow(next, true);
+            }
+        };
+
+        const handleAnnotationChange = (data: any) => {
+            handleObjectChange(data);
+        };
+
+        const socket = (window as any).socket;
+        if (socket) {
+            socket.on('object-changed', handleObjectChange);
+            socket.on('annotation-changed', handleAnnotationChange);
+        }
+
+        return () => {
+            if (socket) {
+                socket.off('object-changed', handleObjectChange);
+                socket.off('annotation-changed', handleAnnotationChange);
+            }
+        };
+    }, [connected, project]);
+
+
+    const saveNow = async (next: ProjectData, skipWebSocket = false) => {
         setProject(next);
         saveProject(next);
+        try {
+            await updateProjectApi(next.id, { objects: next.objects as any });
+            
+            if (connected && !skipWebSocket) {
+                if (project) {
+                    const oldObjects = project.objects;
+                    const newObjects = next.objects;
+                    
+                    const added = newObjects.filter(newObj => !oldObjects.find(oldObj => oldObj.id === newObj.id));
+                    const updated = newObjects.filter(newObj => {
+                        const oldObj = oldObjects.find(old => old.id === newObj.id);
+                        return oldObj && JSON.stringify(oldObj) !== JSON.stringify(newObj);
+                    });
+                    const deleted = oldObjects.filter(oldObj => !newObjects.find(newObj => newObj.id === oldObj.id));
+                    
+                    added.forEach(obj => sendObjectChange('add', obj));
+                    updated.forEach(obj => sendObjectChange('update', obj));
+                    deleted.forEach(obj => sendObjectChange('delete', undefined, obj.id));
+                }
+            }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const addPrimitive = (kind: PrimitiveKind) => {
@@ -44,13 +137,12 @@ const Editor: React.FC = () => {
             id,
             type: "primitive",
             kind,
-            name: kind,
+            name: kind === "cube" ? "Cube" : kind === "sphere" ? "Sphere" : "Cone",
             visible: true,
             position: [0, 0.5, 0],
             rotation: [0, 0, 0],
             scale: [1, 1, 1]
         } as any;
-        console.log("Adding primitive:", obj);
         const next = { ...project, objects: [...project.objects, obj] };
         saveNow(next);
         setSelectedId(id);
@@ -79,7 +171,7 @@ const Editor: React.FC = () => {
             }
             
             const id = crypto.randomUUID();
-            const obj: STLObject = {
+        const obj: STLObject = {
                 id,
                 type: "stl",
                 name: file.name,
@@ -90,8 +182,10 @@ const Editor: React.FC = () => {
                 geometryJson: geom.toJSON()
             } as any;
             
+            // Save to backend first; only update UI after success
             const next = { ...project, objects: [...project.objects, obj] };
-            saveNow(next);
+            await updateProjectApi(project.id, { objects: next.objects as any });
+            await saveNow(next);
             setSelectedId(id);
         } catch (error) {
             console.error("Error uploading STL:", error);
@@ -103,13 +197,12 @@ const Editor: React.FC = () => {
     const onDeleteObject = (id: string) => {
         if (!project) return;
         
-        // Delete the object and all its associated annotations
-        const next = { 
-            ...project, 
+        const next = {
+            ...project,
             objects: project.objects.filter(obj => {
-                if (obj.id === id) return false; // Delete the main object
+                if (obj.id === id) return false;
                 if (obj.type === "annotation" && (obj as AnnotationObject).targetObjectId === id) {
-                    return false; // Delete annotations that belong to this object
+                    return false;
                 }
                 return true;
             })
@@ -123,27 +216,24 @@ const Editor: React.FC = () => {
 
     const onPlaceAnnotation = (worldPosition: [number, number, number], normal?: [number, number, number], text?: string, parentId?: string) => {
         if (!project || !text?.trim()) return;
-        
         const id = crypto.randomUUID();
         const finalParentId = parentId || selectedId || undefined;
-        console.log('Creating annotation with parentId:', finalParentId, 'from passed parentId:', parentId, 'selectedId:', selectedId);
-        
         const obj: AnnotationObject = {
             id,
             type: "annotation",
             name: `Annotation ${project.objects.filter(o => o.type === "annotation").length + 1}`,
-            visible: true,
+            visible: false, // Start with labels hidden
             position: worldPosition,
             rotation: [0, 0, 0],
             scale: [1, 1, 1],
             text: text.trim(),
             normal,
-            targetObjectId: finalParentId // 🟢 Use passed parentId or fallback to selectedId
+            targetObjectId: finalParentId
         };
+        
         
         const next = { ...project, objects: [...project.objects, obj] };
         saveNow(next);
-        setSelectedId(id);
     };
 
     const onUpdateObject = (id: string, updates: Partial<SceneObject>) => {
@@ -170,7 +260,7 @@ const Editor: React.FC = () => {
                         onClick={() => navigate("/projects")} 
                         className="px-2 py-1.5 rounded-lg border border-slate-600/50 bg-slate-800/80 text-white text-sm font-medium cursor-pointer transition-all duration-200 hover:bg-slate-800 hover:border-blue-500/50"
                     >
-                        ← Back
+                        Back
                     </button>
                     <div className="px-2 py-1.5 text-white text-sm font-semibold whitespace-nowrap">
                         {project.title}
@@ -220,6 +310,12 @@ const Editor: React.FC = () => {
             {/* Floating Right Toolbar */}
             <div className="absolute top-20 right-4 w-72 bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700/30 shadow-2xl z-[1000] p-5">
 
+                {/* User Presence - show when connected */}
+                {connected && (
+                    <div className="mb-4">
+                        <UserPresence users={roomUsers} isVisible={connected} />
+                    </div>
+                )}
 
                 {/* Position Controls */}
                 {selectedId && (
@@ -406,7 +502,15 @@ const Editor: React.FC = () => {
                 }}
                 onPlaceAnnotation={onPlaceAnnotation}
                 onUpdateObject={onUpdateObject}
+                onCameraChange={(cam) => {
+                    updateProjectApi(project.id, { camera: { position: cam.position, target: cam.target } }).catch(() => {});
+                    
+                    if (connected) {
+                        sendCameraMove(cam.position, cam.target);
+                    }
+                }}
             />
+            
         </div>
     );
 };

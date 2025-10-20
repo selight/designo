@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { createProject, listProjects, deleteProject } from "../lib/storage";
+import { listProjects, deleteProject, writeProjectsIndex } from "../lib/storage";
+import { loadUser } from "../lib/storage";
+import { createProjectApi, deleteProjectApi, listProjectsByOwner, enableProjectSharing } from "../lib/api";
 import type { ProjectSummary } from "../lib/types";
 
 interface Props {
@@ -13,20 +15,47 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
     const [showMenu, setShowMenu] = useState<string | null>(null);
 
     useEffect(() => {
-        setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
+        const u = loadUser();
+        if (!u) {
+            setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
+            return;
+        }
+        (async () => {
+            try {
+                const remote = await listProjectsByOwner(u.id);
+                const summaries = remote.map(p => ({ id: p._id, title: p.title, updatedAt: new Date(p.updatedAt).getTime() }));
+                writeProjectsIndex(summaries);
+                setProjects(summaries.sort((a, b) => b.updatedAt - a.updatedAt));
+            } catch {
+                setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
+            }
+        })();
     }, []);
 
-    const create = (e: React.FormEvent) => {
+    const create = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!title.trim()) return;
-        const project = createProject(title.trim());
-        setTitle("");
-        setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
-        onOpenProject(project.id);
+        const u = loadUser();
+        try {
+            const p = await createProjectApi(title.trim(), u?.id);
+            const id = p._id;
+            setTitle("");
+            const summaries = [...listProjects(), { id, title: p.title, updatedAt: new Date(p.updatedAt).getTime() }];
+            writeProjectsIndex(summaries);
+            setProjects(summaries.sort((a, b) => b.updatedAt - a.updatedAt));
+            onOpenProject(id);
+        } catch (err) {
+            console.error(err);
+        }
     };
 
-    const handleDelete = (projectId: string) => {
+    const handleDelete = async (projectId: string) => {
         if (window.confirm("Are you sure you want to delete this project? This action cannot be undone.")) {
+            try {
+                await deleteProjectApi(projectId);
+            } catch (e) {
+                console.error(e);
+            }
             deleteProject(projectId);
             setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
             setShowMenu(null);
@@ -37,6 +66,33 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
         setShowMenu(showMenu === projectId ? null : projectId);
     };
 
+    const handleShare = async (projectId: string) => {
+        try {
+            const user = loadUser();
+            if (!user) {
+                alert('You must be logged in to share projects.');
+                return;
+            }
+
+            // Enable sharing on the backend
+            await enableProjectSharing(projectId, user.id);
+            
+            // Generate share link
+            const shareLink = `${window.location.origin}/share/${projectId}`;
+            
+            // Copy to clipboard
+            await navigator.clipboard.writeText(shareLink);
+            
+        
+            alert('Project sharing enabled! Share link copied to clipboard.');
+            
+            setShowMenu(null);
+        } catch (err) {
+            console.error('Failed to share project:', err);
+            alert('Failed to share project. Please try again.');
+        }
+    };
+
     return (
         <div className="w-full min-h-dvh text-white bg-primary">
             <div className="w-full px-6 py-8">
@@ -44,7 +100,7 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
                     <h1 className="m-0 text-3xl font-bold">Projects</h1>
                     <button 
                         onClick={onLogout}
-                        className="px-6 py-3 rounded-lg bg-secondary text-primary border-none hover:bg-secondary/80 transition-all font-medium"
+                        className="px-6 py-3 rounded-md bg-secondary text-primary border-none hover:bg-secondary/80 transition-all font-medium"
                     >
                         Logout
                     </button>
@@ -62,8 +118,8 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
                         disabled={!title.trim()} 
                         className={`px-6 py-3 rounded-lg border-none ${
                             title.trim() 
-                                ? "bg-primary text-white hover:bg-primary/80 transition-all" 
-                                : "bg-secondary text-primary cursor-not-allowed"
+                                ? "bg-secondary text-white font-bold  hover:border-primary cursor-pointer transition-all"  
+                                : "bg-secondary opacity-50 border-secondary text-white cursor-not-allowed"
                         }`}
                     >
                         Create
@@ -88,9 +144,21 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
                                 {showMenu === p.id && (
                                     <div className="absolute right-0 top-10 bg-slate-700 border border-slate-600 rounded-lg shadow-lg z-10 min-w-[120px]">
                                         <button
-                                            onClick={() => handleDelete(p.id)}
-                                            className="w-full px-4 py-2 text-left text-red-400 hover:bg-slate-600 rounded-lg transition-colors"
+                                            onClick={() => handleShare(p.id)}
+                                            className="w-full px-4 py-2 text-left text-blue-400 hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-2"
                                         >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                                            </svg>
+                                            Share
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(p.id)}
+                                            className="w-full px-4 py-2 text-left text-red-400 hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
                                             Delete
                                         </button>
                                     </div>
