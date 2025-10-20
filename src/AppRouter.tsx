@@ -3,41 +3,28 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "r
 import Login from "./pages/Login";
 import Projects from "./pages/Projects";
 import Editor from "./pages/Editor";
-import { loadUser, saveUser } from "./lib/storage";
+import { clearAppStorage } from "./lib/storage";
 
 const AppRouter: React.FC = () => {
-    const hasUser = !!loadUser();
 
     return (
         <Router>
             <Routes>
                 <Route 
                     path="/login" 
-                    element={
-                        hasUser ? 
-                        <Navigate to="/projects" replace /> : 
-                        <LoginWrapper />
-                    } 
+                    element={<LoginWrapper />} 
                 />
                 <Route 
                     path="/projects" 
-                    element={
-                        hasUser ? 
-                        <ProjectsWrapper /> : 
-                        <Navigate to="/login" replace />
-                    } 
+                    element={<ProjectsWrapper />} 
                 />
                 <Route 
                     path="/editor/:projectId" 
-                    element={
-                        hasUser ? 
-                        <Editor /> : 
-                        <Navigate to="/login" replace />
-                    } 
+                    element={<Editor />} 
                 />
                 <Route 
                     path="/" 
-                    element={<Navigate to={hasUser ? "/projects" : "/login"} replace />} 
+                    element={<Navigate to="/projects" replace />} 
                 />
             </Routes>
         </Router>
@@ -55,7 +42,7 @@ const ProjectsWrapper: React.FC = () => {
         <Projects 
             onOpenProject={(id) => navigate(`/editor/${id}`)} 
             onLogout={() => { 
-                saveUser({ name: "" }); 
+                clearAppStorage();
                 navigate("/login"); 
             }} 
         />

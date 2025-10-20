@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { createProject, listProjects, loadUser, deleteProject } from "../lib/storage";
+import { createProject, listProjects, deleteProject } from "../lib/storage";
 import type { ProjectSummary } from "../lib/types";
 
 interface Props {
@@ -11,7 +11,6 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
     const [title, setTitle] = useState("");
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [showMenu, setShowMenu] = useState<string | null>(null);
-    const user = loadUser();
 
     useEffect(() => {
         setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));

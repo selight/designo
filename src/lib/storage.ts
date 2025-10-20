@@ -6,6 +6,7 @@ const PROJECT_KEY_PREFIX = "app.project.";
 
 export function saveUser(user: UserProfile) {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    window.dispatchEvent(new CustomEvent('app:user-changed'));
 }
 
 export function loadUser(): UserProfile | null {
@@ -28,7 +29,7 @@ export function listProjects(): ProjectSummary[] {
     }
 }
 
-function writeProjectsIndex(list: ProjectSummary[]) {
+export function writeProjectsIndex(list: ProjectSummary[]) {
     localStorage.setItem(PROJECTS_INDEX_KEY, JSON.stringify(list));
 }
 
@@ -89,6 +90,16 @@ export function deleteProject(id: string): void {
     const index = listProjects();
     const updatedIndex = index.filter(project => project.id !== id);
     writeProjectsIndex(updatedIndex);
+}
+
+export function clearAppStorage(): void {
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(PROJECTS_INDEX_KEY);
+    // Optionally clear all project keys
+    Object.keys(localStorage)
+        .filter(k => k.startsWith(PROJECT_KEY_PREFIX))
+        .forEach(k => localStorage.removeItem(k));
+    window.dispatchEvent(new CustomEvent('app:user-changed'));
 }
 
 

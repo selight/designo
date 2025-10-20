@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { saveUser } from "../lib/storage";
+import { loginOrRegisterAndLoad } from "../lib/auth";
 
 interface Props {
     onLoggedIn: () => void;
@@ -75,12 +75,19 @@ const Login: React.FC<Props> = ({ onLoggedIn }) => {
         };
     }, []);
 
-    const submit = (e: React.FormEvent) => {
+    const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
-        saveUser({ name: name.trim() });
-        onLoggedIn();
+        try {
+            const { userName, isNew } = await loginOrRegisterAndLoad(name.trim());
+            alert(isNew ? `Welcome ${userName}!` : `Hello again ${userName}!`);
+            onLoggedIn();
+        } catch (err) {
+            console.error(err);
+        }
     };
+
+    // No user creation on input; only on Continue
 
     return (
         <div className="grid place-items-center w-screen h-dvh bg-gradient-to-br from-slate-900 to-slate-800 text-white relative overflow-hidden">
