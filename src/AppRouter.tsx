@@ -1,11 +1,36 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import Login from "./pages/Login.tsx";
 import Projects from "./pages/Projects.tsx";
 import Editor from "./pages/Editor.tsx";
-import { clearAppStorage } from "./lib/storage.ts";
+import { clearAppStorage, loadUser } from "./lib/storage.ts";
 
 const AppRouter: React.FC = () => {
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        // Check if user is authenticated on app load
+        const user = loadUser();
+        setIsAuthenticated(!!user);
+
+        // Listen for authentication changes
+        const handleUserChange = () => {
+            const user = loadUser();
+            setIsAuthenticated(!!user);
+        };
+
+        window.addEventListener('app:user-changed', handleUserChange);
+        return () => window.removeEventListener('app:user-changed', handleUserChange);
+    }, []);
+
+    // Show loading state while checking authentication
+    if (isAuthenticated === null) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-slate-900">
+                <div className="text-white">Loading...</div>
+            </div>
+        );
+    }
 
     return (
         <Router>
@@ -20,7 +45,7 @@ const AppRouter: React.FC = () => {
                 />
                 <Route 
                     path="/editor/:projectId" 
-                    element={<Editor />} 
+                    element={<EditorWrapper />} 
                 />
                 <Route 
                     path="/share/:projectId" 
@@ -28,7 +53,11 @@ const AppRouter: React.FC = () => {
                 />
                 <Route 
                     path="/" 
-                    element={<Navigate to="/projects" replace />} 
+                    element={
+                        isAuthenticated ? 
+                            <Navigate to="/projects" replace /> : 
+                            <Navigate to="/login" replace />
+                    } 
                 />
             </Routes>
         </Router>
@@ -42,6 +71,29 @@ const LoginWrapper: React.FC = () => {
 
 const ProjectsWrapper: React.FC = () => {
     const navigate = useNavigate();
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const user = loadUser();
+        setIsAuthenticated(!!user);
+        
+        if (!user) {
+            navigate("/login");
+        }
+    }, [navigate]);
+
+    if (isAuthenticated === null) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-slate-900">
+                <div className="text-white">Loading...</div>
+            </div>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return null; // Will redirect to login
+    }
+
     return (
         <Projects 
             onOpenProject={(id) => navigate(`/editor/${id}`)} 
@@ -51,6 +103,34 @@ const ProjectsWrapper: React.FC = () => {
             }} 
         />
     );
+};
+
+const EditorWrapper: React.FC = () => {
+    const navigate = useNavigate();
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const user = loadUser();
+        setIsAuthenticated(!!user);
+        
+        if (!user) {
+            navigate("/login");
+        }
+    }, [navigate]);
+
+    if (isAuthenticated === null) {
+        return (
+            <div className="w-screen h-screen flex items-center justify-center bg-slate-900">
+                <div className="text-white">Loading...</div>
+            </div>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return null; // Will redirect to login
+    }
+
+    return <Editor />;
 };
 
 const ShareWrapper: React.FC = () => {

@@ -93,7 +93,7 @@ const Login: React.FC<Props> = ({ onLoggedIn }) => {
         <div className="grid place-items-center w-screen h-dvh bg-gradient-to-br from-slate-900 to-slate-800 text-white relative overflow-hidden">
             <div ref={bgRef} className="absolute inset-0 z-0 pointer-events-none" />
             <form onSubmit={submit} className="flex flex-col gap-3 w-[min(90vw,360px)] bg-slate-900 p-6 rounded-xl shadow-2xl relative z-10">
-                <h4 className="m-0 text-2xl font-semibold">Dummy Login</h4>
+                <h4 className="m-0 text-2xl font-semibold">SignIn</h4>
                 <label className="text-sm opacity-85">Name</label>
                 <input
                     value={name}
