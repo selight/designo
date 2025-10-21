@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { loginOrRegisterAndLoad } from "../lib/auth.ts";
+import { useLoading } from "../contexts/LoadingContext.tsx";
 
 interface Props {
     onLoggedIn: () => void;
@@ -10,6 +11,7 @@ const Login: React.FC<Props> = ({ onLoggedIn }) => {
     const [name, setName] = useState("");
     const bgRef = useRef<HTMLDivElement | null>(null);
     const initializedRef = useRef<boolean>(false);
+    const { setLoading } = useLoading();
 
     useEffect(() => {
         if (!bgRef.current) return;
@@ -78,12 +80,17 @@ const Login: React.FC<Props> = ({ onLoggedIn }) => {
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
+        
+        setLoading(true, "Signing in...");
         try {
             const { userName, isNew } = await loginOrRegisterAndLoad(name.trim());
+            setLoading(false);
             alert(isNew ? `Welcome ${userName}!` : `Hello again ${userName}!`);
             onLoggedIn();
         } catch (err) {
             console.error(err);
+            setLoading(false);
+            alert("Login failed. Please try again.");
         }
     };
 

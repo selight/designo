@@ -1,8 +1,14 @@
 import React from 'react';
 import AppRouter from './AppRouter.tsx';
+import { LoadingProvider, GlobalLoading } from './contexts/LoadingContext.tsx';
 
 const App: React.FC = () => {
-  return <AppRouter />;
+  return (
+    <LoadingProvider>
+      <AppRouter />
+      <GlobalLoading />
+    </LoadingProvider>
+  );
 };
 
 export default App;

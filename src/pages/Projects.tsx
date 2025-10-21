@@ -3,6 +3,7 @@ import { listProjects, deleteProject, writeProjectsIndex } from "../lib/storage.
 import { loadUser } from "../lib/storage.ts";
 import { createProjectApi, deleteProjectApi, listProjectsByOwner, enableProjectSharing } from "../lib/api.ts";
 import type { ProjectSummary } from "../lib/types.ts";
+import { useLoading } from "../contexts/LoadingContext.tsx";
 
 interface Props {
     onOpenProject: (id: string) => void;
@@ -13,28 +14,38 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
     const [title, setTitle] = useState("");
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [showMenu, setShowMenu] = useState<string | null>(null);
+    const { setLoading } = useLoading();
 
     useEffect(() => {
-        const u = loadUser();
-        if (!u) {
-            setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
-            return;
-        }
-        (async () => {
+        const loadProjects = async () => {
+            setLoading(true, "Loading projects...");
             try {
+                const u = loadUser();
+                if (!u) {
+                    setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
+                    setLoading(false);
+                    return;
+                }
+                
                 const remote = await listProjectsByOwner(u.id);
                 const summaries = remote.map(p => ({ id: p._id, title: p.title, updatedAt: new Date(p.updatedAt).getTime() }));
                 writeProjectsIndex(summaries);
                 setProjects(summaries.sort((a, b) => b.updatedAt - a.updatedAt));
+                setLoading(false);
             } catch {
                 setProjects(listProjects().sort((a, b) => b.updatedAt - a.updatedAt));
+                setLoading(false);
             }
-        })();
+        };
+        
+        loadProjects();
     }, []);
 
     const create = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!title.trim()) return;
+        
+        setLoading(true, "Creating project...");
         const u = loadUser();
         try {
             const p = await createProjectApi(title.trim(), u?.id);
@@ -43,9 +54,12 @@ const Projects: React.FC<Props> = ({ onOpenProject, onLogout }) => {
             const summaries = [...listProjects(), { id, title: p.title, updatedAt: new Date(p.updatedAt).getTime() }];
             writeProjectsIndex(summaries);
             setProjects(summaries.sort((a, b) => b.updatedAt - a.updatedAt));
+            setLoading(false);
             onOpenProject(id);
         } catch (err) {
             console.error(err);
+            setLoading(false);
+            alert("Failed to create project. Please try again.");
         }
     };
 

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import type { ProjectData, PrimitiveKind, SceneObject, STLObject, AnnotationObject } from "../lib/types.ts";
+import { useLoading } from "../contexts/LoadingContext.tsx";
 
 // Define types for socket data
 interface SocketData {
@@ -30,6 +31,7 @@ const Editor: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
     const navigate = useNavigate();
     const stlLoader = useMemo(() => new STLLoader(), []);
+    const { setLoading } = useLoading();
 
     const [project, setProject] = useState<ProjectData | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -47,6 +49,7 @@ const Editor: React.FC = () => {
     useEffect(() => {
         if (!projectId) return;
         (async () => {
+            setLoading(true, "Loading project...");
             try {
                 const remote = await getProject(projectId);
                 const loadedProject = {
@@ -65,6 +68,7 @@ const Editor: React.FC = () => {
                         setSelectedId(firstModel.id);
                     }
                 }
+                setLoading(false);
             } catch {
                 const local = loadProject(projectId);
                 setProject(local);
@@ -72,11 +76,12 @@ const Editor: React.FC = () => {
                     const firstModel = local.objects.find(obj => obj.type === "primitive" || obj.type === "stl");
                     if (firstModel) setSelectedId(firstModel.id);
                 }
+                setLoading(false);
             }
         })();
     }, [projectId, selectedId]);
 
-    const saveNow = async (next: ProjectData, skipWebSocket = false) => {
+    const saveNow = useCallback(async (next: ProjectData, skipWebSocket = false) => {
         setProject(next);
         saveProject(next);
         try {
@@ -102,7 +107,7 @@ const Editor: React.FC = () => {
         } catch (e) {
             console.error(e);
         }
-    };
+    }, [connected, project, sendObjectChange]);
 
     // Debounced camera change handler
     const cameraChangeTimeoutRef = useRef<number | null>(null);
@@ -192,6 +197,7 @@ const Editor: React.FC = () => {
     const onUploadSTL = async (file: File) => {
         if (!project) return;
         
+        setLoading(true, "Uploading and processing STL file...");
         try {
             const arrayBuffer = await file.arrayBuffer();
             const geom = stlLoader.parse(arrayBuffer as unknown as ArrayBuffer);
@@ -228,8 +234,10 @@ const Editor: React.FC = () => {
             await updateProjectApi(project.id, { objects: next.objects });
             await saveNow(next);
             setSelectedId(id);
+            setLoading(false);
         } catch (error) {
             console.error("Error uploading STL:", error);
+            setLoading(false);
             alert("Error uploading STL file. Please try again.");
         }
     };
