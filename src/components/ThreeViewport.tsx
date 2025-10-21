@@ -303,8 +303,12 @@ const ThreeViewport: React.FC<Props> = ({
                 }
                 const camera = currentCameraRef.current || perspectiveCamera;
                 renderer.render(scene, camera);
-                if (css2dRenderer && css2dRenderer.domElement) {
-                    css2dRenderer.render(scene, camera);
+                if (css2dRenderer && css2dRenderer.domElement && css2dRenderer.domElement.parentNode) {
+                    try {
+                        css2dRenderer.render(scene, camera);
+                    } catch (error) {
+                        console.warn("Error rendering CSS2D:", error);
+                    }
                 }
             } catch (error) {
                 console.warn("Error in animation loop:", error);
@@ -388,21 +392,23 @@ const ThreeViewport: React.FC<Props> = ({
             transform.dispose();
             renderer.dispose();
             
-            // CSS2D renderer cleanup - it doesn't have a dispose method
-            if (css2dRenderer && css2dRenderer.domElement && scene) {
+            // CSS2D renderer cleanup 
+            if (css2dRenderer && css2dRenderer.domElement) {
                 try {
                     // Clear all CSS2D objects from the scene
-                    scene.traverse((child) => {
-                        if (child instanceof CSS2DObject) {
-                            try {
-                                if (child.parent === scene) {
-                                    scene.remove(child);
+                    if (scene && typeof scene.traverse === 'function') {
+                        scene.traverse((child) => {
+                            if (child && child instanceof CSS2DObject) {
+                                try {
+                                    if (child.parent === scene) {
+                                        scene.remove(child);
+                                    }
+                                } catch (error) {
+                                    console.warn("Error removing CSS2D object during cleanup:", error);
                                 }
-                            } catch (error) {
-                                console.warn("Error removing CSS2D object during cleanup:", error);
                             }
-                        }
-                    });
+                        });
+                    }
                     if (css2dRenderer.domElement.parentNode) {
                         css2dRenderer.domElement.parentNode.removeChild(css2dRenderer.domElement);
                     }
@@ -411,7 +417,6 @@ const ThreeViewport: React.FC<Props> = ({
                 }
             }
             
-            // Clear container completely - this is the safest approach
             if (container) {
                 container.innerHTML = '';
             }
@@ -460,7 +465,6 @@ const ThreeViewport: React.FC<Props> = ({
         let mesh: THREE.Mesh;
         
         if (obj.type === "primitive") {
-            // Enhanced materials like Three.js editor
             const material = new THREE.MeshPhysicalMaterial({ 
                 color: 0x8ab4f8, 
                 metalness: 0.0, 
@@ -471,22 +475,25 @@ const ThreeViewport: React.FC<Props> = ({
             });
             
             let geometry: THREE.BufferGeometry;
-            const kind = (obj as { kind?: string; name?: string }).kind ?? (typeof (obj as { kind?: string; name?: string }).name === 'string' ? (obj as { kind?: string; name?: string }).name : undefined);
+            const kind = (obj as { kind?: string; name?: string }).kind ?? ((obj as {
+                kind?: string;
+                name?: string
+            }).name);
             if (kind === "cube") {
                 geometry = new THREE.BoxGeometry(1, 1, 1);
             } else if (kind === "sphere") {
-                geometry = new THREE.SphereGeometry(0.6, 64, 48); // Higher quality sphere
+                geometry = new THREE.SphereGeometry(0.6, 64, 48); 
             } else if (kind === "cone") {
                 geometry = new THREE.ConeGeometry(0.5, 1, 32); // radius, height, radialSegments
             } else {
-                // If kind is missing or unrecognized, try to infer from name
+               
                 const name = (obj as { name?: string }).name?.toLowerCase();
                 if (name === "sphere") {
                     geometry = new THREE.SphereGeometry(0.6, 64, 48);
                 } else if (name === "cone") {
                     geometry = new THREE.ConeGeometry(0.5, 1, 32);
                 } else {
-                    // Only default to cube if we really can't determine the shape
+                
                     geometry = new THREE.BoxGeometry(1, 1, 1);
                 }
             }
@@ -494,7 +501,6 @@ const ThreeViewport: React.FC<Props> = ({
         } else if (obj.type === "stl") {
             // Enhanced STL material
             const material = new THREE.MeshPhysicalMaterial({
-                color: 0xb2ffc8,
                 metalness: 0.1,
                 roughness: 0.3,
                 clearcoat: 0.2,
@@ -532,7 +538,7 @@ const ThreeViewport: React.FC<Props> = ({
         mesh.name = obj.name;
         mesh.visible = obj.visible;
         
-        // Validate and set position to prevent null/undefined values
+     
         const safePosition = obj.position && obj.position.length === 3 && obj.position.every(v => isFinite(v)) 
             ? obj.position 
             : [0, 0, 0];
@@ -561,12 +567,12 @@ const ThreeViewport: React.FC<Props> = ({
         const scene = sceneRef.current;
         if (!scene || !project) return;
 
-        // Clear previous objects - simple and safe approach
+       
         idToObject3DRef.current.forEach((obj) => {
             if (obj && obj.parent === scene) {
                 scene.remove(obj);
             }
-            // Dispose of geometry and materials
+          
             if (obj instanceof THREE.Mesh) {
                 obj.geometry?.dispose();
                 if (obj.material) {
@@ -599,7 +605,7 @@ const ThreeViewport: React.FC<Props> = ({
         const orbit = orbitRef.current;
         if (!transform || !orbit) return;
 
-        // Do not attach transform controls; dragging is disabled
+        // dragging is disabled
         transform.detach();
         if (activeViewport === "perspective") {
             orbit.enabled = true;
@@ -778,15 +784,10 @@ const ThreeViewport: React.FC<Props> = ({
                 background: "#0b1020"
             }} 
         >
-             {/* Render annotations only if parent still exists */}
+             {/* Render annotations */}
             {sceneRef.current && rendererRef.current && currentCameraRef.current && controlsReady &&
                  project.objects
-                     .filter(
-                         (o): o is AnnotationObject =>
-                             o.type === "annotation" &&
-                             (!o.targetObjectId ||
-                                 project.objects.some((m) => m.id === o.targetObjectId)) // skip if parent deleted
-                     )
+                     .filter((o): o is AnnotationObject => o.type === "annotation")
                      .map((obj, i) => {
                          
                         return (

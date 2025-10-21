@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -103,6 +103,35 @@ const Editor: React.FC = () => {
             console.error(e);
         }
     };
+
+    // Debounced camera change handler
+    const cameraChangeTimeoutRef = useRef<number | null>(null);
+    const debouncedCameraChange = useCallback((cam: { position: [number, number, number]; target: [number, number, number] }) => {
+        // Clear existing timeout
+        if (cameraChangeTimeoutRef.current) {
+            clearTimeout(cameraChangeTimeoutRef.current);
+        }
+        
+        // Set new timeout - only update after 500ms of inactivity
+        cameraChangeTimeoutRef.current = setTimeout(() => {
+            if (project) {
+                updateProjectApi(project.id, { camera: { position: cam.position, target: cam.target } }).catch(() => {});
+                
+                if (connected) {
+                    sendCameraMove(cam.position, cam.target);
+                }
+            }
+        }, 500);
+    }, [project, connected, sendCameraMove]);
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (cameraChangeTimeoutRef.current) {
+                clearTimeout(cameraChangeTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (!connected || !project) return;
@@ -513,13 +542,7 @@ const Editor: React.FC = () => {
                 }}
                 onPlaceAnnotation={onPlaceAnnotation}
                 onUpdateObject={onUpdateObject}
-                onCameraChange={(cam) => {
-                    updateProjectApi(project.id, { camera: { position: cam.position, target: cam.target } }).catch(() => {});
-                    
-                    if (connected) {
-                        sendCameraMove(cam.position, cam.target);
-                    }
-                }}
+                onCameraChange={debouncedCameraChange}
             />
             
         </div>
