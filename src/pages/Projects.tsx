@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { listProjects, deleteProject, writeProjectsIndex } from "../lib/storage";
-import { loadUser } from "../lib/storage";
-import { createProjectApi, deleteProjectApi, listProjectsByOwner, enableProjectSharing } from "../lib/api";
-import type { ProjectSummary } from "../lib/types";
+import { listProjects, deleteProject, writeProjectsIndex } from "../lib/storage.ts";
+import { loadUser } from "../lib/storage.ts";
+import { createProjectApi, deleteProjectApi, listProjectsByOwner, enableProjectSharing } from "../lib/api.ts";
+import type { ProjectSummary } from "../lib/types.ts";
 
 interface Props {
     onOpenProject: (id: string) => void;

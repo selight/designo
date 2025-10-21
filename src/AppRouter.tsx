@@ -1,9 +1,9 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import Login from "./pages/Login";
-import Projects from "./pages/Projects";
-import Editor from "./pages/Editor";
-import { clearAppStorage } from "./lib/storage";
+import Login from "./pages/Login.tsx";
+import Projects from "./pages/Projects.tsx";
+import Editor from "./pages/Editor.tsx";
+import { clearAppStorage } from "./lib/storage.ts";
 
 const AppRouter: React.FC = () => {
 

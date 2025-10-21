@@ -5,9 +5,9 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { BufferGeometryLoader } from "three";
-import type { ProjectData, PrimitiveKind, SceneObject, AnnotationObject } from "../lib/types";
-import Annotation from "./Annotation";
-import AnnotationInput from "./AnnotationInput";
+import type { ProjectData, PrimitiveKind, SceneObject, AnnotationObject } from "../lib/types.ts";
+import Annotation from "./Annotation.tsx";
+import AnnotationInput from "./AnnotationInput.tsx";
 
 type ViewportType = "perspective" | "top" | "front" | "right";
 
@@ -180,7 +180,7 @@ const ThreeViewport: React.FC<Props> = ({
         // Main grid
         const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0x444444);
         grid.material.opacity = 0.3;
-        (grid.material as any).transparent = true;
+        (grid.material as THREE.Material).transparent = true;
         scene.add(grid);
   
         // Enhanced axes helper
@@ -229,7 +229,7 @@ const ThreeViewport: React.FC<Props> = ({
         });
 
         const transform = new TransformControls(perspectiveCamera, renderer.domElement);
-        transform.addEventListener("dragging-changed", (e: any) => {
+        transform.addEventListener("dragging-changed", (e: { value: unknown }) => {
             if (orbitRef.current) {
                 orbitRef.current.enabled = !e.value;
             }
@@ -327,14 +327,14 @@ const ThreeViewport: React.FC<Props> = ({
 
         // Expose basic camera functions
         if (onResetCamera) {
-            (window as any).resetCamera = () => {
+            (window as Window & { resetCamera?: () => void }).resetCamera = () => {
                 perspectiveCamera.position.set(8, 6, 8);
                 orbit.target.set(0, 0, 0);
                 orbit.update();
             };
             
             // Function to focus camera on a specific position
-            (window as any).focusOnPosition = (position: [number, number, number]) => {
+            (window as Window & { focusOnPosition?: (position: [number, number, number]) => void }).focusOnPosition = (position: [number, number, number]) => {
                 const target = new THREE.Vector3().fromArray(position);
                 
                 // Smoothly animate to the target
@@ -416,7 +416,7 @@ const ThreeViewport: React.FC<Props> = ({
                 container.innerHTML = '';
             }
         };
-    }, []);
+    }, [onCameraChange, onResetCamera, project.camera]);
 
     useEffect(() => {
         return () => {
@@ -471,7 +471,7 @@ const ThreeViewport: React.FC<Props> = ({
             });
             
             let geometry: THREE.BufferGeometry;
-            const kind = (obj as any).kind ?? (typeof (obj as any).name === 'string' ? (obj as any).name : undefined);
+            const kind = (obj as { kind?: string; name?: string }).kind ?? (typeof (obj as { kind?: string; name?: string }).name === 'string' ? (obj as { kind?: string; name?: string }).name : undefined);
             if (kind === "cube") {
                 geometry = new THREE.BoxGeometry(1, 1, 1);
             } else if (kind === "sphere") {
@@ -480,7 +480,7 @@ const ThreeViewport: React.FC<Props> = ({
                 geometry = new THREE.ConeGeometry(0.5, 1, 32); // radius, height, radialSegments
             } else {
                 // If kind is missing or unrecognized, try to infer from name
-                const name = (obj as any).name?.toLowerCase();
+                const name = (obj as { name?: string }).name?.toLowerCase();
                 if (name === "sphere") {
                     geometry = new THREE.SphereGeometry(0.6, 64, 48);
                 } else if (name === "cone") {
@@ -591,7 +591,7 @@ const ThreeViewport: React.FC<Props> = ({
             idToObject3DRef.current.set(obj.id, mesh);
             mesh.visible = true;
         }
-    }, [project?.objects]);
+    }, [project]);
 
 
     useEffect(() => {
@@ -670,8 +670,7 @@ const ThreeViewport: React.FC<Props> = ({
                      const worldNormal: [number, number, number] | undefined = normal ? 
                          [normal.x, normal.y, normal.z] : undefined;
                      
-                     const clickedObject = intersects[0].object;
-                     let rootObject: THREE.Object3D | null = clickedObject;
+                     let rootObject: THREE.Object3D | null = intersects[0].object;
                      while (rootObject && !rootObject.userData.__sceneObjectId) {
                          rootObject = rootObject.parent;
                      }
@@ -685,9 +684,8 @@ const ThreeViewport: React.FC<Props> = ({
                 clickTimeout = window.setTimeout(() => {
                     // Single click - normal selection mode
                     if (intersects.length > 0) {
-                        const clickedObject = intersects[0].object;
                         // Find the root object (the one with __sceneObjectId)
-                        let rootObject: THREE.Object3D | null = clickedObject;
+                        let rootObject: THREE.Object3D | null = intersects[0].object;
                         while (rootObject && !rootObject.userData.__sceneObjectId) {
                             rootObject = rootObject.parent;
                         }
@@ -717,10 +715,10 @@ const ThreeViewport: React.FC<Props> = ({
     }, [onSelectObject, onPlaceAnnotation, project.objects]);
 
     useEffect(() => {
-        const socket = (window as any).socket;
+        const socket = (window as Window & { socket?: { on: (event: string, handler: (data: any) => void) => void; off: (event: string, handler: (data: any) => void) => void; } }).socket;
         if (!socket) return;
 
-            const handleCameraMove = (data: any) => {
+            const handleCameraMove = (data: { position: [number, number, number]; target: [number, number, number] }) => {
                 const orbit = orbitRef.current;
             const camera = currentCameraRef.current;
             
@@ -797,7 +795,7 @@ const ThreeViewport: React.FC<Props> = ({
                                 annotation={{ ...obj, index: obj.index || i + 1 }}
                                 scene={sceneRef.current!}
                                 camera={currentCameraRef.current!}
-                                controls={orbitRef.current}
+                                controls={orbitRef.current || undefined}
                                 activeAnnotationId={activeAnnotationId}
                                 setActiveAnnotationId={setActiveAnnotationId}
                                 onDelete={onDeleteObject}

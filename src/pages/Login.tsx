@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { loginOrRegisterAndLoad } from "../lib/auth";
+import { loginOrRegisterAndLoad } from "../lib/auth.ts";
 
 interface Props {
     onLoggedIn: () => void;

@@ -2,12 +2,27 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import type { ProjectData, PrimitiveKind, SceneObject, STLObject, AnnotationObject } from "../lib/types";
-import { loadProject, saveProject } from "../lib/storage";
-import { getProject, updateProjectApi } from "../lib/api";
-import ThreeViewport from "../components/ThreeViewport";
-import UserPresence from "../components/UserPresence";
-import { useSocket } from "../lib/useSocket";
+import type { ProjectData, PrimitiveKind, SceneObject, STLObject, AnnotationObject } from "../lib/types.ts";
+
+// Define types for socket data
+interface SocketData {
+    action: 'add' | 'update' | 'delete';
+    object?: SceneObject;
+    objectId?: string;
+}
+
+interface WindowWithSocket extends Window {
+    socket?: {
+        on: (event: string, handler: (data: SocketData) => void) => void;
+        off: (event: string, handler: (data: SocketData) => void) => void;
+    };
+    resetCamera?: () => void;
+}
+import { loadProject, saveProject } from "../lib/storage.ts";
+import { getProject, updateProjectApi } from "../lib/api.ts";
+import ThreeViewport from "../components/ThreeViewport.tsx";
+import UserPresence from "../components/UserPresence.tsx";
+import { useSocket } from "../lib/useSocket.ts";
 
 type ViewportType = "perspective" | "top" | "front" | "right";
 
@@ -37,7 +52,7 @@ const Editor: React.FC = () => {
                 const loadedProject = {
                     id: remote._id,
                     title: remote.title,
-                    objects: (remote.objects as any) ?? [],
+                    objects: (remote.objects as SceneObject[]) ?? [],
                     updatedAt: new Date(remote.updatedAt).getTime(),
                     camera: remote.camera || { position: [8,6,8], target: [0,0,0] }
                 } as ProjectData;
@@ -61,52 +76,11 @@ const Editor: React.FC = () => {
         })();
     }, [projectId, selectedId]);
 
-    useEffect(() => {
-        if (!connected || !project) return;
-
-        const handleObjectChange = (data: any) => {
-            if (data.action === 'add' && data.object) {
-                const next = { ...project, objects: [...project.objects, data.object] };
-                saveNow(next, true);
-            } else if (data.action === 'update' && data.object) {
-                const next = {
-                    ...project,
-                    objects: project.objects.map(obj => obj.id === data.object.id ? data.object : obj)
-                };
-                saveNow(next, true);
-            } else if (data.action === 'delete' && data.objectId) {
-                const next = {
-                    ...project,
-                    objects: project.objects.filter(obj => obj.id !== data.objectId)
-                };
-                saveNow(next, true);
-            }
-        };
-
-        const handleAnnotationChange = (data: any) => {
-            handleObjectChange(data);
-        };
-
-        const socket = (window as any).socket;
-        if (socket) {
-            socket.on('object-changed', handleObjectChange);
-            socket.on('annotation-changed', handleAnnotationChange);
-        }
-
-        return () => {
-            if (socket) {
-                socket.off('object-changed', handleObjectChange);
-                socket.off('annotation-changed', handleAnnotationChange);
-            }
-        };
-    }, [connected, project]);
-
-
     const saveNow = async (next: ProjectData, skipWebSocket = false) => {
         setProject(next);
         saveProject(next);
         try {
-            await updateProjectApi(next.id, { objects: next.objects as any });
+            await updateProjectApi(next.id, { objects: next.objects });
             
             if (connected && !skipWebSocket) {
                 if (project) {
@@ -130,6 +104,46 @@ const Editor: React.FC = () => {
         }
     };
 
+    useEffect(() => {
+        if (!connected || !project) return;
+
+        const handleObjectChange = (data: SocketData) => {
+            if (data.action === 'add' && data.object) {
+                const next = { ...project, objects: [...project.objects, data.object] };
+                saveNow(next, true);
+            } else if (data.action === 'update' && data.object) {
+                const next = {
+                    ...project,
+                    objects: project.objects.map(obj => obj.id === data.object!.id ? data.object! : obj)
+                };
+                saveNow(next, true);
+            } else if (data.action === 'delete' && data.objectId) {
+                const next = {
+                    ...project,
+                    objects: project.objects.filter(obj => obj.id !== data.objectId)
+                };
+                saveNow(next, true);
+            }
+        };
+
+        const handleAnnotationChange = (data: SocketData) => {
+            handleObjectChange(data);
+        };
+
+        const socket = (window as WindowWithSocket).socket;
+        if (socket) {
+            socket.on('object-changed', handleObjectChange);
+            socket.on('annotation-changed', handleAnnotationChange);
+        }
+
+        return () => {
+            if (socket) {
+                socket.off('object-changed', handleObjectChange);
+                socket.off('annotation-changed', handleAnnotationChange);
+            }
+        };
+    }, [connected, project, saveNow]);
+
     const addPrimitive = (kind: PrimitiveKind) => {
         if (!project) return;
         const id = crypto.randomUUID();
@@ -142,7 +156,7 @@ const Editor: React.FC = () => {
             position: [0, 0.5, 0],
             rotation: [0, 0, 0],
             scale: [1, 1, 1]
-        } as any;
+        } as SceneObject;
         const next = { ...project, objects: [...project.objects, obj] };
         saveNow(next);
         setSelectedId(id);
@@ -180,11 +194,11 @@ const Editor: React.FC = () => {
                 rotation: [0, 0, 0],
                 scale: [1, 1, 1],
                 geometryJson: geom.toJSON()
-            } as any;
+            } as STLObject;
             
             // Save to backend first; only update UI after success
             const next = { ...project, objects: [...project.objects, obj] };
-            await updateProjectApi(project.id, { objects: next.objects as any });
+            await updateProjectApi(project.id, { objects: next.objects });
             await saveNow(next);
             setSelectedId(id);
         } catch (error) {
@@ -199,13 +213,9 @@ const Editor: React.FC = () => {
         
         const next = {
             ...project,
-            objects: project.objects.filter(obj => {
-                if (obj.id === id) return false;
-                if (obj.type === "annotation" && (obj as AnnotationObject).targetObjectId === id) {
-                    return false;
-                }
-                return true;
-            })
+            objects: project.objects.filter(obj => 
+                obj.id !== id && !(obj.type === "annotation" && (obj as AnnotationObject).targetObjectId === id)
+            )
         };
         
         saveNow(next);
@@ -496,8 +506,9 @@ const Editor: React.FC = () => {
                 onSelectObject={setSelectedId}
                 onDeleteObject={onDeleteObject}
                 onResetCamera={() => {
-                    if ((window as any).resetCamera) {
-                        (window as any).resetCamera();
+                    const resetCamera = (window as WindowWithSocket).resetCamera;
+                    if (resetCamera) {
+                        resetCamera();
                     }
                 }}
                 onPlaceAnnotation={onPlaceAnnotation}

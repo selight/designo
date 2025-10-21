@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
-import type { AnnotationObject } from "../lib/types";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { AnnotationObject } from "../lib/types.ts";
 
 interface AnnotationProps {
   annotation: AnnotationObject & { index?: number };
   scene: THREE.Scene;
   camera: THREE.Camera;
-  controls?: any;
+  controls?: OrbitControls;
   activeAnnotationId: string | null;
   setActiveAnnotationId: (id: string | null) => void;
   onDelete?: (id: string) => void;
@@ -64,11 +65,10 @@ const Annotation: React.FC<AnnotationProps> = ({
     sprite.visible = true;
     sprite.userData.annotationId = annotation.id;
     
-    const handleClick = () => {
+    sprite.userData.onClick = () => {
       setActiveAnnotationId(annotation.id);
       focusCamera(sprite.position.clone());
     };
-    sprite.userData.onClick = handleClick;
     
     scene.add(sprite);
     spriteRef.current = sprite;

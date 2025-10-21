@@ -1,4 +1,4 @@
-import type { ProjectData, ProjectSummary, UserProfile } from "./types";
+import type { ProjectData, ProjectSummary, UserProfile } from "./types.ts";
 
 const USER_KEY = "app.user";
 const PROJECTS_INDEX_KEY = "app.projects.index";

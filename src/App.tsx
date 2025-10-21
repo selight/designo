@@ -1,5 +1,5 @@
 import React from 'react';
-import AppRouter from './AppRouter';
+import AppRouter from './AppRouter.tsx';
 
 const App: React.FC = () => {
   return <AppRouter />;
