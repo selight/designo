@@ -5,9 +5,9 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { BufferGeometryLoader } from "three";
-import type { ProjectData, PrimitiveKind, SceneObject, AnnotationObject } from "../lib/types.ts";
-import Annotation from "./Annotation.tsx";
-import AnnotationInput from "./AnnotationInput.tsx";
+import type { ProjectData, PrimitiveKind, SceneObject, AnnotationObject } from "../lib/types";
+import Annotation from "./Annotation";
+import AnnotationInput from "./AnnotationInput";
 
 type ViewportType = "perspective" | "top" | "front" | "right";
 
@@ -180,7 +180,7 @@ const ThreeViewport: React.FC<Props> = ({
         // Main grid
         const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0x444444);
         grid.material.opacity = 0.3;
-        (grid.material as THREE.Material).transparent = true;
+        (grid.material as any).transparent = true;
         scene.add(grid);
   
         // Enhanced axes helper
@@ -229,7 +229,7 @@ const ThreeViewport: React.FC<Props> = ({
         });
 
         const transform = new TransformControls(perspectiveCamera, renderer.domElement);
-        transform.addEventListener("dragging-changed", (e: { value: unknown }) => {
+        transform.addEventListener("dragging-changed", (e: any) => {
             if (orbitRef.current) {
                 orbitRef.current.enabled = !e.value;
             }
@@ -303,12 +303,8 @@ const ThreeViewport: React.FC<Props> = ({
                 }
                 const camera = currentCameraRef.current || perspectiveCamera;
                 renderer.render(scene, camera);
-                if (css2dRenderer && css2dRenderer.domElement && css2dRenderer.domElement.parentNode) {
-                    try {
-                        css2dRenderer.render(scene, camera);
-                    } catch (error) {
-                        console.warn("Error rendering CSS2D:", error);
-                    }
+                if (css2dRenderer && css2dRenderer.domElement) {
+                    css2dRenderer.render(scene, camera);
                 }
             } catch (error) {
                 console.warn("Error in animation loop:", error);
@@ -331,14 +327,14 @@ const ThreeViewport: React.FC<Props> = ({
 
         // Expose basic camera functions
         if (onResetCamera) {
-            (window as Window & { resetCamera?: () => void }).resetCamera = () => {
+            (window as any).resetCamera = () => {
                 perspectiveCamera.position.set(8, 6, 8);
                 orbit.target.set(0, 0, 0);
                 orbit.update();
             };
             
             // Function to focus camera on a specific position
-            (window as Window & { focusOnPosition?: (position: [number, number, number]) => void }).focusOnPosition = (position: [number, number, number]) => {
+            (window as any).focusOnPosition = (position: [number, number, number]) => {
                 const target = new THREE.Vector3().fromArray(position);
                 
                 // Smoothly animate to the target
@@ -392,23 +388,20 @@ const ThreeViewport: React.FC<Props> = ({
             transform.dispose();
             renderer.dispose();
             
-            // CSS2D renderer cleanup 
-            if (css2dRenderer && css2dRenderer.domElement) {
+           if (css2dRenderer && css2dRenderer.domElement && scene) {
                 try {
                     // Clear all CSS2D objects from the scene
-                    if (scene && typeof scene.traverse === 'function') {
-                        scene.traverse((child) => {
-                            if (child && child instanceof CSS2DObject) {
-                                try {
-                                    if (child.parent === scene) {
-                                        scene.remove(child);
-                                    }
-                                } catch (error) {
-                                    console.warn("Error removing CSS2D object during cleanup:", error);
+                    scene.traverse((child) => {
+                        if (child instanceof CSS2DObject) {
+                            try {
+                                if (child.parent === scene) {
+                                    scene.remove(child);
                                 }
+                            } catch (error) {
+                                console.warn("Error removing CSS2D object during cleanup:", error);
                             }
-                        });
-                    }
+                        }
+                    });
                     if (css2dRenderer.domElement.parentNode) {
                         css2dRenderer.domElement.parentNode.removeChild(css2dRenderer.domElement);
                     }
@@ -421,7 +414,7 @@ const ThreeViewport: React.FC<Props> = ({
                 container.innerHTML = '';
             }
         };
-    }, [onCameraChange, onResetCamera, project.camera]);
+    }, []);
 
     useEffect(() => {
         return () => {
@@ -475,10 +468,7 @@ const ThreeViewport: React.FC<Props> = ({
             });
             
             let geometry: THREE.BufferGeometry;
-            const kind = (obj as { kind?: string; name?: string }).kind ?? ((obj as {
-                kind?: string;
-                name?: string
-            }).name);
+            const kind = (obj as any).kind ?? (typeof (obj as any).name === 'string' ? (obj as any).name : undefined);
             if (kind === "cube") {
                 geometry = new THREE.BoxGeometry(1, 1, 1);
             } else if (kind === "sphere") {
@@ -597,7 +587,7 @@ const ThreeViewport: React.FC<Props> = ({
             idToObject3DRef.current.set(obj.id, mesh);
             mesh.visible = true;
         }
-    }, [project]);
+    }, [project?.objects]);
 
 
     useEffect(() => {
@@ -786,10 +776,17 @@ const ThreeViewport: React.FC<Props> = ({
         >
              {/* Render annotations */}
             {sceneRef.current && rendererRef.current && currentCameraRef.current && controlsReady &&
-                 project.objects
-                     .filter((o): o is AnnotationObject => o.type === "annotation")
-                     .map((obj, i) => {
-                         
+                (() => {
+                    const annotations = project.objects
+                        .filter((o): o is AnnotationObject => o.type === "annotation")
+                        .reduce((unique, obj) => {
+                            if (!unique.find(item => item.id === obj.id)) {
+                                unique.push(obj);
+                            }
+                            return unique;
+                        }, [] as AnnotationObject[]);
+
+                    return annotations.map((obj, i) => {
                         return (
                             <Annotation
                                 key={obj.id}
@@ -802,7 +799,8 @@ const ThreeViewport: React.FC<Props> = ({
                                 onDelete={onDeleteObject}
                             />
                         );
-                     })}
+                    });
+                })()}
 
             {/* Render annotation input */}
             {annotationInput && (

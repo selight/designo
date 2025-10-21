@@ -81,19 +81,19 @@ const Editor: React.FC = () => {
         saveProject(next);
         try {
             await updateProjectApi(next.id, { objects: next.objects });
-            
+
             if (connected && !skipWebSocket) {
                 if (project) {
                     const oldObjects = project.objects;
                     const newObjects = next.objects;
-                    
+
                     const added = newObjects.filter(newObj => !oldObjects.find(oldObj => oldObj.id === newObj.id));
                     const updated = newObjects.filter(newObj => {
                         const oldObj = oldObjects.find(old => old.id === newObj.id);
                         return oldObj && JSON.stringify(oldObj) !== JSON.stringify(newObj);
                     });
                     const deleted = oldObjects.filter(oldObj => !newObjects.find(newObj => newObj.id === oldObj.id));
-                    
+
                     added.forEach(obj => sendObjectChange('add', obj));
                     updated.forEach(obj => sendObjectChange('update', obj));
                     deleted.forEach(obj => sendObjectChange('delete', undefined, obj.id));
@@ -111,12 +111,12 @@ const Editor: React.FC = () => {
         if (cameraChangeTimeoutRef.current) {
             clearTimeout(cameraChangeTimeoutRef.current);
         }
-        
+
         // Set new timeout - only update after 500ms of inactivity
         cameraChangeTimeoutRef.current = setTimeout(() => {
             if (project) {
                 updateProjectApi(project.id, { camera: { position: cam.position, target: cam.target } }).catch(() => {});
-                
+
                 if (connected) {
                     sendCameraMove(cam.position, cam.target);
                 }
@@ -259,7 +259,7 @@ const Editor: React.FC = () => {
             id,
             type: "annotation",
             name: `Annotation ${project.objects.filter(o => o.type === "annotation").length + 1}`,
-            visible: true, // Make annotations visible by default
+            visible: false, // Start with labels hidden
             position: worldPosition,
             rotation: [0, 0, 0],
             scale: [1, 1, 1],
