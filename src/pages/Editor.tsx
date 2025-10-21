@@ -138,8 +138,12 @@ const Editor: React.FC = () => {
 
         const handleObjectChange = (data: SocketData) => {
             if (data.action === 'add' && data.object) {
-                const next = { ...project, objects: [...project.objects, data.object] };
-                saveNow(next, true);
+                // Check if object already exists to prevent duplicates
+                const exists = project.objects.find(obj => obj.id === data.object!.id);
+                if (!exists) {
+                    const next = { ...project, objects: [...project.objects, data.object] };
+                    saveNow(next, true);
+                }
             } else if (data.action === 'update' && data.object) {
                 const next = {
                     ...project,
@@ -155,20 +159,14 @@ const Editor: React.FC = () => {
             }
         };
 
-        const handleAnnotationChange = (data: SocketData) => {
-            handleObjectChange(data);
-        };
-
         const socket = (window as WindowWithSocket).socket;
         if (socket) {
             socket.on('object-changed', handleObjectChange);
-            socket.on('annotation-changed', handleAnnotationChange);
         }
 
         return () => {
             if (socket) {
                 socket.off('object-changed', handleObjectChange);
-                socket.off('annotation-changed', handleAnnotationChange);
             }
         };
     }, [connected, project, saveNow]);
@@ -261,7 +259,7 @@ const Editor: React.FC = () => {
             id,
             type: "annotation",
             name: `Annotation ${project.objects.filter(o => o.type === "annotation").length + 1}`,
-            visible: false, // Start with labels hidden
+            visible: true, // Make annotations visible by default
             position: worldPosition,
             rotation: [0, 0, 0],
             scale: [1, 1, 1],

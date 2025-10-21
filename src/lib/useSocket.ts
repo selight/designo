@@ -68,6 +68,8 @@ export const useSocket = (projectId: string) => {
 
     socketRef.current = newSocket;
     setSocket(newSocket);
+    
+    (window as any).socket = newSocket;
 
     // Connection events
     newSocket.on('connect', () => {
@@ -98,22 +100,6 @@ export const useSocket = (projectId: string) => {
     });
 
 
-    // Camera events
-    newSocket.on('camera-moved', () => {
-    });
-
-    // Object events
-    newSocket.on('object-changed', () => {
-    });
-
-    // Annotation events
-    newSocket.on('annotation-changed', () => {
-    });
-
-    // Cursor events
-    newSocket.on('cursor-moved', () => {
-    });
-
     // Error handling
     newSocket.on('error', (error: any) => {
       console.error('Socket error:', error);
@@ -122,6 +108,7 @@ export const useSocket = (projectId: string) => {
     return () => {
       newSocket.disconnect();
       socketRef.current = null;
+      (window as any).socket = null;
     };
   }, [projectId]);
 
